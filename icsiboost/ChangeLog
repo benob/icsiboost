@@ -1,0 +1,3 @@
+2007-06-25 Benoit Favre favre@icsi.berkeley.edu
+
+	* all sources: ported the project to autoconf/automake
