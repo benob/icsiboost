@@ -112,7 +112,7 @@ void _array_locate_element(array_t* input, size_t index)
 {
 	if(index<0 || index>=input->length)
 	{
-		warn("_array_locate_element(%p,%td), out-of-bounds", input, index);
+		warn("_array_locate_element(%p,%zd), out-of-bounds", input, index);
 		return;
 	}
 	if(index<input->current_index && input->current_index-index>index)

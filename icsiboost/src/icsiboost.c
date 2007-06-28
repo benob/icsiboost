@@ -73,7 +73,7 @@ typedef struct template { // a column definition
 	string_t* name;
 	int type;
 	hashtable_t* dictionary;       // dictionary for token based template
-	vector_t* dictionary_keys;     // the actual tokens
+	vector_t* tokens;              // the actual tokens
 	//vector_t* dictionary_counts;
 	vector_t* ordered;             // ordered example ids according to value for continuous columns
 } template_t;
@@ -101,6 +101,12 @@ typedef struct weakclassifier { // a weak learner
 	double *c2;                    // weight by class, token present or above threshold
 } weakclassifier_t;
 
+typedef struct tokeninfo { // store info about a word (or token)
+	int32_t id;
+	char* key;
+	int count;
+} tokeninfo_t;
+
 double smoothing=0.5;              // -E <number> in boostexter
 int verbose=0;
 
@@ -111,7 +117,7 @@ weakclassifier_t* train_text_stump(double min_objective, template_t* template, v
 {
 	int i,l;
 	int column=template->column;
-	size_t num_tokens=template->dictionary_keys->length;
+	size_t num_tokens=template->tokens->length;
 	int32_t t;
 
 	double* weight[2][num_classes]; // weight[b][label][token] (=> D() in the paper) , only for token presence (absence is infered from sum_of_weights)
@@ -326,7 +332,7 @@ workertoolbox_t* toolbox=NULL;
 void* threaded_worker(void* data)
 {
 	int column;
-	int worker_num=*(int*)data;
+	int worker_num=*((int*)data);
 	while(!finished)
 	{
 		sem_wait(toolbox->ready_to_process);
@@ -506,6 +512,15 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 	char* end_of_file = (char*)input->data+input->length;
 	while(begining_of_line < end_of_file)// && examples->length<10000)
 	{
+		line_num++;
+		while(begining_of_line<end_of_file && *begining_of_line==' ') begining_of_line++;
+		if(*begining_of_line=='|' || *begining_of_line=='\n') // skip comments and blank lines
+		{
+			while(begining_of_line<end_of_file && *begining_of_line!='\n') begining_of_line++;
+			begining_of_line++;
+			continue;
+		}
+		if(begining_of_line >= end_of_file) die("unexpected end of file, line %d in %s", line_num, filename);
 		example_t* example = MALLOC(sizeof(example_t)); // that's one new example per line
 		example->features = vector_new_type(templates->length,sizeof(int32_t)); // we will store 32bit ints and floats
 		example->features->length=templates->length;
@@ -515,7 +530,7 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 		for(i = 0; i < templates->length; i++) // get one feature per column
 		{
 			while(current < end_of_file && *current == ' ') current++; // strip spaces at begining
-			if(current >= end_of_file) die("unexpected end of file, line %d in %s", line_num+1, filename);
+			if(current >= end_of_file) die("unexpected end of file, line %d in %s", line_num, filename);
 			char* token = current;
 			int length = 0;
 			while(current < end_of_file && *current != ',') // get up to coma
@@ -523,7 +538,7 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 				current++;
 				length++;
 			}
-			if(current >= end_of_file) die("unexpected end of file, line %d in %s", line_num+1, filename);
+			if(current >= end_of_file) die("unexpected end of file, line %d in %s", line_num, filename);
 			while(*(token+length-1) == ' ' && length > 0) length--; // strip spaces as end
 			char field[length+1];
 			memcpy(field, token, length);
@@ -537,29 +552,29 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 				{
 					value = strtof(field, &error_location);
 					if(error_location==NULL || *error_location!='\0')
-					   die("could not convert \"%s\" to a number, line %d, char %td in %s", field, line_num+1, token-begining_of_line+1, filename);
+					   die("could not convert \"%s\" to a number, line %d, char %td in %s", field, line_num, token-begining_of_line+1, filename);
 				}
 				vector_set_float(example->features,i,value); }
 			else if(template->type == FEATURE_TYPE_TEXT)
 			{
 				if(strcmp(field,"?")) // if not unknwon value
 				{
-					int32_t word_id = (int32_t)hashtable_get_or_default(template->dictionary, field, length, (void*)-1);
-					if(word_id == -1)
+					tokeninfo_t* tokeninfo = hashtable_get(template->dictionary, field, length);
+					if(tokeninfo == NULL)
 					{
-						if(in_test)word_id=0;
+						if(in_test)tokeninfo=vector_get(template->tokens,0); // default to the unknown token
 						else // update the dictionary with the new token
 						{
-							word_id = template->dictionary_keys->length;
-							hashtable_set(template->dictionary, field, length, (void*)word_id);
-							vector_push(template->dictionary_keys, strdup(field));
-						//	vector_push(template->dictionary_counts, NULL);
+							tokeninfo = (tokeninfo_t*)MALLOC(sizeof(tokeninfo_t));
+							tokeninfo->id = template->tokens->length;
+							tokeninfo->key = strdup(field);
+							tokeninfo->count=0;
+							hashtable_set(template->dictionary, field, length, tokeninfo);
+							vector_push(template->tokens, tokeninfo);
 						}
 					}
-					//if(!in_test)
-					//	vector_set(template->dictionary_counts,word_id,(void*)((int)vector_get(template->dictionary_counts,word_id,)+1));
-					//fprintf(stdout,"%d %d %s\n",i , word_id, field);
-					vector_set_int32(example->features,i,word_id);
+					tokeninfo->count++;
+					vector_set_int32(example->features,i,tokeninfo->id);
 				}
 				else
 				{
@@ -575,10 +590,10 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 		//fprintf(stdout,"%d %p\n",examples->length,vector_get(example->features,0));
 		char* class = current; // get class label
 		while(current < end_of_file && *current != '\n') current++; // up to end of line
-		if(current >= end_of_file) die("unexpected end of file, line %d in %s", line_num+1, filename);
+		if(current >= end_of_file) die("unexpected end of file, line %d in %s", line_num, filename);
 		while(class < current && *class == ' ') class++; // strip spaces at the begining
 		int length=0;
-		while(class < current && *(class+length) != ' ' && *(class+length) != '.') length++; // strip "." and spaces at the end
+		while(class < current && *(class+length) != ' ' && *(class+length) != '.' && *(class+length) != '\n') length++; // strip "." and spaces at the end
 		char class_token[length+1];
 		memcpy(class_token,class,length); // copy as a cstring
 		class_token[length]='\0';
@@ -587,11 +602,10 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 		{
 			if(!strncmp(((string_t*)vector_get(classes,id))->data, class, length)) break;
 		}
-		if(id == classes->length) die("unknown class \"%s\", line %d, char %td in %s", class_token, line_num+1, class-begining_of_line+1, filename);
+		if(id == classes->length) die("unknown class \"%s\", line %d, char %td in %s", class_token, line_num, class-begining_of_line+1, filename);
 		example->class = id;
 		vector_push(examples, example); // store example
 		begining_of_line = current+1;
-		line_num++;
 	}
 	vector_optimize(examples); // reduce memory consumption
 	if(!in_test) 
@@ -600,7 +614,7 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 		{
 			template_t* template=(template_t*)vector_get(templates,i);
 			hashtable_optimize(template->dictionary);
-			vector_optimize(template->dictionary_keys);
+			vector_optimize(template->tokens);
 		}
 		/*for(i=0; i<templates->length; i++)
 		{
@@ -609,8 +623,8 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 			{
 				if((int)vector_get(template->dictionary_counts,j)<feature_count_cutoff)
 				{
-					void* element=hashtable_remove(template->dictionary,vector_get(template->dictionary_keys,j),strlen(vector_get(template->dictionary_keys,j)));
-					if(element!=NULL)die("YOUPI %s", (char*)vector_get(template->dictionary_keys,j));
+					void* element=hashtable_remove(template->dictionary,vector_get(template->tokens,j),strlen(vector_get(template->tokens,j)));
+					if(element!=NULL)die("YOUPI %s", (char*)vector_get(template->tokens,j));
 				}
 			}
 		}*/
@@ -628,7 +642,7 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 			example->score[j]=0.0;
 		}
 	}
-	if(verbose)fprintf(stdout,"EXAMPLES: %s %td\n",filename, examples->length);
+	if(verbose)fprintf(stdout,"EXAMPLES: %s %zd\n",filename, examples->length);
 	mapped_free(input);
 	return examples;
 }
@@ -723,7 +737,13 @@ int main(int argc, char** argv)
 	int line_num = 0;
 	while((line = mapped_readline(input)) != NULL) // should add some validity checking !!!
 	{
-		if(line_num != 0) // this line contains a template definition
+		regexstatus_t* status=string_match(line,"^(\\|| *$)",0,NULL); // skip comments and blank lines
+		if(status)
+		{
+			free(status);
+			continue;
+		}
+		if(classes != NULL) // this line contains a template definition
 		{
 			array_t* parts = string_split("(^ +| *: *| *\\.$)", line);
 			template_t* template = (template_t*)MALLOC(sizeof(template_t));
@@ -731,10 +751,14 @@ int main(int argc, char** argv)
 			template->name = (string_t*)array_get(parts, 0);
 			string_t* type = (string_t*)array_get(parts, 1);
 			template->dictionary = hashtable_new(16384);
-			template->dictionary_keys = vector_new(16);
+			template->tokens = vector_new(16);
 			//template->dictionary_counts = vector_new(16);
 			template->ordered=NULL;
-			vector_push(template->dictionary_keys,strdup("?"));
+			tokeninfo_t* unknown_token=(tokeninfo_t*)MALLOC(sizeof(tokeninfo_t));
+			unknown_token->id=0;
+			unknown_token->key=strdup("?");
+			unknown_token->count=0;
+			vector_push(template->tokens,unknown_token);
 			if(!strcmp(type->data, "continuous")) template->type = FEATURE_TYPE_CONTINUOUS;
 			else if(!strcmp(type->data, "text")) template->type = FEATURE_TYPE_TEXT;
 			else if(!strcmp(type->data, "scored text")) template->type = FEATURE_TYPE_IGNORE;
@@ -824,12 +848,12 @@ int main(int argc, char** argv)
 	//sem_init(toolbox->ready_to_process,0,0);
 	sem_unlink("ready_to_process");
 	toolbox->ready_to_process=sem_open("ready_to_process",O_CREAT,0700,0);
-	if(toolbox->ready_to_process==SEM_FAILED)die("ready to process %p",SEM_FAILED);
+	if(toolbox->ready_to_process==(sem_t*)SEM_FAILED)die("ready to process %d",SEM_FAILED);
 	//toolbox->result_available=MALLOC(sizeof(sem_t));
 	//sem_init(toolbox->result_available,0,0);
 	sem_unlink("result_available");
 	toolbox->result_available=sem_open("result_avaiable",O_CREAT,0700,0);
-	if(toolbox->result_available==SEM_FAILED)die("result_available");
+	if(toolbox->result_available==(sem_t*)SEM_FAILED)die("result_available");
 	for(i=0; i<number_of_workers; i++)
 	{
 		pthread_attr_t attributes;
@@ -921,7 +945,8 @@ int main(int argc, char** argv)
 			char* token="";
 			if(classifier->type==CLASSIFIER_TYPE_TEXT)
 			{
-				token=vector_get(classifier->template->dictionary_keys,classifier->token);
+				tokeninfo_t* tokeninfo=(tokeninfo_t*)vector_get(classifier->template->tokens,classifier->token);
+				token=tokeninfo->key;
 			}
 			fprintf(stdout,"\n%s:%s\n",classifier->template->name->data,token);
 			if(classifier->type==CLASSIFIER_TYPE_THRESHOLD)
@@ -962,8 +987,14 @@ int main(int argc, char** argv)
 		template_t* template=(template_t*)vector_get(templates,i);
 		string_free(template->name);
 		hashtable_free(template->dictionary);
-		vector_apply(template->dictionary_keys, vector_freedata, NULL);
-		vector_free(template->dictionary_keys);
+		int j;
+		for(j=0; j<template->tokens->length; j++)
+		{
+			tokeninfo_t* tokeninfo = (tokeninfo_t*) vector_get(template->tokens, j);
+			FREE(tokeninfo->key);
+			FREE(tokeninfo);
+		}
+		vector_free(template->tokens);
 		if(template->ordered!=NULL)vector_free(template->ordered);
 		FREE(template);
 	}

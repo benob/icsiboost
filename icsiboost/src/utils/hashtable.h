@@ -26,6 +26,8 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #include "utils/vector.h"
 #include "utils/mapped.h"
 
+#include <sys/types.h>
+
 typedef struct hashelement {
 	void* key;
 	size_t key_length;
@@ -35,7 +37,6 @@ typedef struct hashelement {
 typedef struct hashtable {
 	size_t size;
 	vector_t** buckets;
-	void* metadata;
 	size_t current_bucket;
 	size_t current_bucket_element;
 } hashtable_t;

@@ -23,8 +23,11 @@ INCLUDES=-Wall -Werror-implicit-function-declaration
 utils = utils/vector.c utils/string.c utils/hashtable.c utils/array.c utils/mapped.c
 utils += utils/vector.h utils/string.h utils/hashtable.h utils/array.h utils/mapped.h utils/utils.h
 
-bin_PROGRAMS = icsiboost utils_test
+bin_PROGRAMS = icsiboost
+check_PROGRAMS = utils_test
 icsiboost_SOURCES = icsiboost.c $(utils)
 icsiboost_LDADD  = -lm -lpthread
 utils_test_SOURCES = utils_test.c $(utils)
 utils_test_LDADD  = -lm
+
+EXTRA_DIST = test_uci.sh

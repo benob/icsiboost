@@ -40,7 +40,7 @@ void _vector_resize(vector_t* v,size_t newSize)
 		FREE(v->data.as_void);
 	}
 	v->data.as_void=newData;*/
-	if(v->data.as_void==NULL)warn("_vector_resize(%td), reallocating vector from %td", newSize, v->size);
+	if(v->data.as_void==NULL)warn("_vector_resize(%zd), reallocating vector from %zd", newSize, v->size);
 	v->size=newSize;
 }
 
@@ -228,37 +228,37 @@ vector_t* vector_subpart(vector_t* v, size_t from, size_t to)
 
 void* vector_get(vector_t* v, size_t index)
 {
-	if(index>=v->length) warn("vector_get(%td), out-of-bounds, index>=%td", index, v->length);
+	if(index>=v->length) warn("vector_get(%zd), out-of-bounds, index>=%zd", index, v->length);
 	return v->data.as_void[index];
 }
 
 float vector_get_float(vector_t* v, size_t index)
 {
-	if(index>=v->length) warn("vector_get_float(%td), out-of-bounds, index>=%td", index, v->length);
+	if(index>=v->length) warn("vector_get_float(%zd), out-of-bounds, index>=%zd", index, v->length);
 	return v->data.as_float[index];
 }
 
 int32_t vector_get_int32(vector_t* v, size_t index)
 {
-	if(index>=v->length) warn("vector_get_int32(%td), out-of-bounds, index>=%td", index, v->length);
+	if(index>=v->length) warn("vector_get_int32(%zd), out-of-bounds, index>=%zd", index, v->length);
 	return v->data.as_int32[index];
 }
 
 void vector_set(vector_t* v, size_t index, void* value)
 {
-	if(index>=v->length) warn("vector_set(%td, %p), out-of-bounds, index>=%td", index, value, v->length);
+	if(index>=v->length) warn("vector_set(%zd, %p), out-of-bounds, index>=%zd", index, value, v->length);
 	v->data.as_void[index]=value;
 }
 
 void vector_set_int32(vector_t* v, size_t index, int32_t value)
 {
-	if(index>=v->length) warn("vector_set_int32(%td, %d), out-of-bounds, index>=%td", index, value, v->length);
+	if(index>=v->length) warn("vector_set_int32(%zd, %d), out-of-bounds, index>=%zd", index, value, v->length);
 	v->data.as_int32[index]=value;
 }
 
 void vector_set_float(vector_t* v, size_t index, float value)
 {
-	if(index>=v->length) warn("vector_set_float(%td, %f), out-of-bounds, index>=%td", index, value, v->length);
+	if(index>=v->length) warn("vector_set_float(%zd, %f), out-of-bounds, index>=%zd", index, value, v->length);
 	v->data.as_float[index]=value;
 }
 

@@ -16,15 +16,27 @@
 # Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
 AC_PREREQ(2.59)
-AC_INIT(FULL-PACKAGE-NAME, VERSION, BUG-REPORT-ADDRESS)
-AC_CONFIG_SRCDIR([src/icsiboost.c])
-AM_INIT_AUTOMAKE([icsiboost],0.08)
-AC_CONFIG_HEADER([config.h])
+AC_INIT([icsiboost],0.08,favre@icsi.berkeley.edu)
+#AC_CONFIG_SRCDIR([src/icsiboost.c])
+AM_INIT_AUTOMAKE()
+AM_CONFIG_HEADER([config.h])
 
+case `uname` in
+	*Darwin*)
+	CFLAGS="$CFLAGS -fnested-functions"
+	;;
+	*)
+	echo PAS BON "$host" !!!
+	;;
+esac
 # Checks for programs.
 AC_PROG_CC
 
 # Checks for libraries.
+# FIXME: Replace `main' with a function in `-lm':
+AC_CHECK_LIB([m], [main])
+# FIXME: Replace `main' with a function in `-lpthread':
+AC_CHECK_LIB([pthread], [main])
 
 # Checks for header files.
 AC_HEADER_STDC

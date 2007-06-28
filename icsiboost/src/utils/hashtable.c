@@ -307,7 +307,7 @@ void hashtable_stats(hashtable_t* h,FILE* stream)
 	}
 	memory+=h->size*sizeof(vector_t*);
 	memory+=sizeof(hashtable_t);
-	fprintf(stream,"hashtable_stat(%p) memory=%dk cost=%.2fbpe elements=%d capacity=%d size=%d/%d average=%.2f load=%.2f\n",
+	fprintf(stream,"hashtable_stat(%p) memory=%dk cost=%.2fbpe elements=%d capacity=%d size=%d/%zd average=%.2f load=%.2f\n",
 			h,memory/1024,(double)memory/elements,elements,capacity,size,h->size,(double)elements/size,(double)elements/capacity);
 }
 
