@@ -25,9 +25,6 @@ case `uname` in
 	*Darwin*)
 	CFLAGS="$CFLAGS -fnested-functions"
 	;;
-	*)
-	echo PAS BON "$host" !!!
-	;;
 esac
 # Checks for programs.
 AC_PROG_CC

@@ -20,7 +20,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #endif
 
 #define _ISOC99_SOURCE // to get the NAN symbol
-#define USE_THREADS
+//#define USE_THREADS
 
 #include "utils/utils.h"
 #include "utils/vector.h"
@@ -104,7 +104,7 @@ typedef struct weakclassifier { // a weak learner
 typedef struct tokeninfo { // store info about a word (or token)
 	int32_t id;
 	char* key;
-	int count;
+	size_t count;
 } tokeninfo_t;
 
 double smoothing=0.5;              // -E <number> in boostexter
@@ -168,6 +168,7 @@ weakclassifier_t* train_text_stump(double min_objective, template_t* template, v
 			objective+=sqrt(weight[1][l][t]*weight[0][l][t]);
 		}
 		objective*=2;
+		fprintf(stdout,"DEBUG: column=%d token=%d obj=%f\n",column,t,objective);
 		if(objective-min_objective<-1e-11) // select the argmin()
 		{
 			min_objective=objective;
@@ -201,23 +202,28 @@ weakclassifier_t* train_text_stump(double min_objective, template_t* template, v
 
 weakclassifier_t* train_continuous_stump(double min_objective, template_t* template, vector_t* examples, int num_classes)
 {
-	int i,j,l;
+	size_t i,j,l;
 	int column=template->column;
 	vector_t* ordered=template->ordered;
 	if(ordered==NULL) // only order examples once, then keep the result in the template
 	{
-		ordered=vector_new(examples->length);
+		ordered=vector_new_type(examples->length,sizeof(int32_t));
 		ordered->length=examples->length;
-		for(i=0;i<examples->length;i++)vector_set_int32(ordered,i,(int32_t)i);
+		int32_t index=0;
+		for(index=0;index<examples->length;index++)vector_set_int32(ordered,index,(int32_t)index);
+		for(i=0;i<examples->length && i<4;i++)fprintf(stdout,"%d %f\n",i,vector_get_float(((example_t*)vector_get(examples,i))->features,column));
 		ordered->length=examples->length;
 		int local_comparator(const void* a, const void* b)
 		{
-			int aa=*(int*)a;
-			int bb=*(int*)b;
-			float aa_value=vector_get_float(((example_t*)vector_get(examples,aa))->features,column);
-			float bb_value=vector_get_float(((example_t*)vector_get(examples,bb))->features,column);
-			if(isnan(aa_value) || aa_value>bb_value)return 1; // put the NAN (unknown values) at the end of the list
-			if(isnan(bb_value) || aa_value<bb_value)return -1;
+			int32_t aa=*(int32_t*)a;
+			int32_t bb=*(int32_t*)b;
+			float aa_value=vector_get_float(((example_t*)vector_get(examples,(size_t)aa))->features,column);
+			float bb_value=vector_get_float(((example_t*)vector_get(examples,(size_t)bb))->features,column);
+			//fprintf(stdout,"%d(%f) <=> %d(%f)\n",aa,aa_value,bb,bb_value);
+			if(aa_value<bb_value)return -1;
+			if(aa_value>bb_value)return -1;
+			//if(isnan(aa_value) || aa_value>bb_value)return 1; // put the NAN (unknown values) at the end of the list
+			//if(isnan(bb_value) || aa_value<bb_value)return -1;
 			return 0;
 		}
 		vector_sort(ordered,local_comparator);
@@ -234,7 +240,7 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 	for(i=0;i<ordered->length;i++) // compute the "unknown" weights and the weight of examples after threshold
 	{
 		example_t* example=vector_get(examples,vector_get_int32(ordered,i));
-		//fprintf(stderr,"%d %f\n",column,*(float*)&vector_get(example->features,column);
+		//fprintf(stderr,"%d %f\n",column,vector_get_float(example->features,column));
 		for(l=0;l<num_classes;l++)
 		{
 			if(isnan(vector_get_float(example->features,column)))
@@ -259,9 +265,10 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 
 	for(i=0;i<ordered->length-1;i++) // compute the objective function at every possible threshold (in between examples)
 	{
-		example_t* example=(example_t*)vector_get(examples,(int)vector_get_int32(ordered,i));
+		example_t* example=(example_t*)vector_get(examples,(size_t)vector_get_int32(ordered,i));
+		fprintf(stdout,"%zd %zd %f\n",i,vector_get_int32(ordered,i),vector_get_float(example->features,column));
 		if(isnan(vector_get_float(example->features,column)))continue; // skip unknown values
-		example_t* next_example=(example_t*)vector_get(examples,(int)vector_get_int32(ordered,i+1));
+		example_t* next_example=(example_t*)vector_get(examples,(size_t)vector_get_int32(ordered,i+1));
 		for(l=0;l<num_classes;l++) // update the objective function by putting the current example the other side of the threshold
 		{
 			weight[1][b(example,l)][l]+=example->weight[l];
@@ -282,6 +289,7 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 			objective+=sqrt(weight[2][1][l]*weight[2][0][l]);
 		}
 		objective*=2;
+		fprintf(stdout,"DEBUG: column=%d threshold=%f obj=%f\n",column,(vector_get_float(next_example->features,column)+vector_get_float(example->features,column))/2,objective);
 		if(objective-min_objective<-1e-11) // get argmin
 		{
 			classifier->objective=objective;
@@ -532,7 +540,7 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 			while(current < end_of_file && *current == ' ') current++; // strip spaces at begining
 			if(current >= end_of_file) die("unexpected end of file, line %d in %s", line_num, filename);
 			char* token = current;
-			int length = 0;
+			size_t length = 0;
 			while(current < end_of_file && *current != ',') // get up to coma
 			{
 				current++;
@@ -592,7 +600,7 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 		while(current < end_of_file && *current != '\n') current++; // up to end of line
 		if(current >= end_of_file) die("unexpected end of file, line %d in %s", line_num, filename);
 		while(class < current && *class == ' ') class++; // strip spaces at the begining
-		int length=0;
+		size_t length=0;
 		while(class < current && *(class+length) != ' ' && *(class+length) != '.' && *(class+length) != '\n') length++; // strip "." and spaces at the end
 		char class_token[length+1];
 		memcpy(class_token,class,length); // copy as a cstring

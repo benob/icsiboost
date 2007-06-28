@@ -314,7 +314,7 @@ size_t vector_search_sorted(vector_t* v, void* value, int (*comparator)(const vo
 
 void vector_sort(vector_t* v,int (*comparator)(const void*,const void*))
 {
-	qsort(v->data.as_void,v->length,sizeof(void*),comparator);
+	qsort(v->data.as_void,v->length,v->element_size,comparator);
 }
 
 void vector_apply(vector_t* v, void (*callback)(void* data, void* metadata),void* metadata)
