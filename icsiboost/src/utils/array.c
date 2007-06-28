@@ -44,9 +44,9 @@ void array_free(array_t* input)
 	FREE(input);
 }
 
-int array_memory_size(array_t* input)
+size_t array_memory_size(array_t* input)
 {
-	int size=sizeof(array_t);
+	size_t size=sizeof(array_t);
 	size+=input->length*(sizeof(arrayelement_t));
 	return size;
 }
@@ -108,11 +108,11 @@ void* array_pop(array_t* input)
 	return output;
 }
 
-void _array_locate_element(array_t* input, int index)
+void _array_locate_element(array_t* input, size_t index)
 {
 	if(index<0 || index>=input->length)
 	{
-		warn("_array_locate_element(%p,%d), out-of-bounds", input, index);
+		warn("_array_locate_element(%p,%td), out-of-bounds", input, index);
 		return;
 	}
 	if(index<input->current_index && input->current_index-index>index)
@@ -126,7 +126,7 @@ void _array_locate_element(array_t* input, int index)
 		input->current_index=input->length-1;
 	}
 	arrayelement_t* element=input->current;
-	int i=input->current_index;
+	size_t i=input->current_index;
 	while(i!=index)
 	{
 		if(i<index)
@@ -144,19 +144,19 @@ void _array_locate_element(array_t* input, int index)
 	input->current_index=index;
 }
 
-void* array_get(array_t* input,int index)
+void* array_get(array_t* input,size_t index)
 {
 	_array_locate_element(input,index);
 	return input->current->data;
 }
 
-void array_set(array_t* input,int index,void* data)
+void array_set(array_t* input,size_t index,void* data)
 {
 	_array_locate_element(input,index);
 	input->current->data=data;
 }
 
-void array_remove(array_t* input, int from, int to)
+void array_remove(array_t* input, size_t from, size_t to)
 {
 	if(to<=from)to=from+1;
 	if(to>input->length)to=input->length;
@@ -190,7 +190,7 @@ void array_remove(array_t* input, int from, int to)
 	input->length-=(to-from);
 }
 
-void* array_remove_element(array_t* input, int index)
+void* array_remove_element(array_t* input, size_t index)
 {
 	void* value=array_get(input,index);
 	array_remove(input,index,index+1);
@@ -209,7 +209,7 @@ array_t* array_copy(array_t* input)
 	return output;
 }
 
-array_t* array_duplicate_content(array_t* input, int value_size)
+array_t* array_duplicate_content(array_t* input, size_t value_size)
 {
 	array_t* output=array_copy(input);
 	arrayelement_t* element=output->first;
@@ -226,7 +226,7 @@ array_t* array_duplicate_content(array_t* input, int value_size)
 void array_remove_duplicates(array_t* array)
 {
 	arrayelement_t* element=array->first;
-	int i=0;
+	size_t i=0;
 	while(element)
 	{
 		while(element->next && element->next->data==element->data)
@@ -238,7 +238,7 @@ void array_remove_duplicates(array_t* array)
 	}
 }
 
-array_t* array_subpart(array_t* input,int from, int to)
+array_t* array_subpart(array_t* input,size_t from, size_t to)
 {
 	if(from<0)from=0;
 	if(to>input->length)to=input->length;
@@ -273,7 +273,7 @@ void array_prepend(array_t* input,array_t* peer)
 	}
 }
 
-void array_insert_element(array_t* input, int index, void* value)
+void array_insert_element(array_t* input, size_t index, void* value)
 {
 	if(index<0) array_unshift(input, value);
 	else if(index>=input->length) array_push(input, value);
@@ -289,7 +289,7 @@ void array_insert_element(array_t* input, int index, void* value)
 	}
 }
 
-void array_insert(array_t* input, int index, array_t* peer)
+void array_insert(array_t* input, size_t index, array_t* peer)
 {
 	if(index<0) array_prepend(input, peer);
 	else if(index>=input->length) array_append(input, peer);
@@ -329,11 +329,11 @@ array_t* array_fusion(array_t* first,array_t* second)
 
 array_t* array_from_vector(vector_t* vector)
 {
-	int i;
+	size_t i;
 	array_t* output=array_new();
 	for(i=0;i<vector->length;i++)
 	{
-		array_push(output,vector->data[i]);
+		array_push(output,vector_get(vector,i));
 	}
 	return output;
 }
@@ -341,11 +341,12 @@ array_t* array_from_vector(vector_t* vector)
 vector_t* vector_from_array(array_t* input)
 {
 	vector_t* output=vector_new(input->length);
+	output->length=input->length;
 	arrayelement_t* element=input->first;
-	int i=0;
+	size_t i=0;
 	while(element)
 	{
-		output->data[i]=element->data;
+		vector_set(output,i,element->data);
 		element=element->next;
 		i++;
 	}
@@ -353,7 +354,7 @@ vector_t* vector_from_array(array_t* input)
 	return output;
 }
 
-int array_search(array_t* input, void* value)
+size_t array_search(array_t* input, void* value)
 {
 	input->current=input->first;
 	input->current_index=0;
@@ -392,7 +393,7 @@ void array_reverse(array_t* input)
 // merge sort
 void array_sort(array_t* input, int (*comparator)(const void*,const void*))
 {
-	int pass=1;
+	size_t pass=1;
 	if(input->first==NULL || input->first->next==NULL)return;
 	while(pass<input->length)
 	{
@@ -400,7 +401,7 @@ void array_sort(array_t* input, int (*comparator)(const void*,const void*))
 		arrayelement_t* output=NULL;
 		while(current)
 		{
-			int i,j;
+			size_t i,j;
 			arrayelement_t* first=current;
 			arrayelement_t* second=first;
 			for(i=0;second && i<pass;i++)second=second->next;

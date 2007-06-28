@@ -73,7 +73,7 @@ void hashtable_set(hashtable_t* h,void* key,int key_length,void* value)
 	vector_t* v=h->buckets[bucket];
 	for(i=0;i<v->length;i++)
 	{
-		hashelement_t* element=(hashelement_t*)v->data[i];
+		hashelement_t* element=(hashelement_t*)vector_get(v,i);
 		if(_hashtable_key_equals(element->key,element->key_length,key,key_length))
 		{
 			element->value=value;
@@ -96,13 +96,13 @@ void* hashtable_remove(hashtable_t* h,void* key,int key_length)
 	vector_t* v=h->buckets[bucket];
 	for(i=0;i<v->length;i++)
 	{
-		hashelement_t* element=(hashelement_t*)v->data[i];
+		hashelement_t* element=(hashelement_t*)vector_get(v,i);
 		if(_hashtable_key_equals(element->key,element->key_length,key,key_length))
 		{
 			//cheaper removal: swap elements instead of vector_remove(v,i);
-			v->data[i]=v->data[v->length-1];
+			vector_set(v,i,vector_get(v,v->length-1));
 			v->length--;
-			if(v->length<v->size/2)vector_resize(v,v->length+v->length/2);
+			if(v->length<v->size/2)_vector_resize(v,v->length+v->length/2);
 			void* value=element->value;
 			FREE(element->key);
 			FREE(element);
@@ -120,7 +120,7 @@ void* hashtable_get(hashtable_t* h,void* key,int key_length)
 	vector_t* v=h->buckets[bucket];
 	for(i=0;i<v->length;i++)
 	{
-		hashelement_t* element=(hashelement_t*)v->data[i];
+		hashelement_t* element=(hashelement_t*)vector_get(v,i);
 		if(_hashtable_key_equals(element->key,element->key_length,key,key_length))
 		{
 			return element->value;
@@ -137,7 +137,7 @@ void* hashtable_get_or_default(hashtable_t* h,void* key,int key_length,void* def
 	vector_t* v=h->buckets[bucket];
 	for(i=0;i<v->length;i++)
 	{
-		hashelement_t* element=(hashelement_t*)v->data[i];
+		hashelement_t* element=(hashelement_t*)vector_get(v,i);
 		if(_hashtable_key_equals(element->key,element->key_length,key,key_length))
 		{
 			return element->value;
@@ -264,7 +264,7 @@ void hashtable_optimize(hashtable_t* h)//, int (*compare)(const void* a,const vo
 	{
 		if(h->buckets[i]!=NULL)
 		{
-			vector_resize(h->buckets[i],h->buckets[i]->length);
+			_vector_resize(h->buckets[i],h->buckets[i]->length);
 			//if(compare!=NULL)qsort(h->buckets[i]->data,h->buckets[i]->length,sizeof(void*),compare);
 		}
 	}
@@ -298,7 +298,7 @@ void hashtable_stats(hashtable_t* h,FILE* stream)
 			memory+=h->buckets[i]->size*(sizeof(void*)+sizeof(hashelement_t))+sizeof(vector_t);
 			for(j=0;j<h->buckets[i]->length;j++)
 			{
-				hashelement_t* element=(hashelement_t*)h->buckets[i]->data[j];
+				hashelement_t* element=(hashelement_t*)vector_get(h->buckets[i],j);
 				memory+=element->key_length;
 			}
 			size++;
@@ -325,7 +325,7 @@ int hashtable_save(hashtable_t* h,FILE* file, off_t (*saveValue)(hashelement_t* 
 			vector_t* v=h->buckets[i];
 			for(j=0;j<v->length;j++)
 			{
-				hashelement_t* element=v->data[j];
+				hashelement_t* element=vector_get(v,j);
 				fwrite(&element->key_length,sizeof(int),1,file);
 				fwrite(element->key,element->key_length,1,file);
 				if(saveValue!=NULL)
@@ -441,7 +441,7 @@ void hashtable_apply(hashtable_t* h, void (*callback)(hashelement_t* element, vo
 		{
 			for(j=0;j<h->buckets[i]->length;j++)
 			{
-				hashelement_t* element=(hashelement_t*)h->buckets[i]->data[j];
+				hashelement_t* element=(hashelement_t*)vector_get(h->buckets[i],j);
 				callback(element,metadata);
 			}
 		}
@@ -473,7 +473,7 @@ vector_t* hashtable_keys(hashtable_t* h)
 			int j;
 			for(j=0;j<h->buckets[i]->length;j++)
 			{
-				hashelement_t* element=(hashelement_t*)h->buckets[i]->data[j];
+				hashelement_t* element=(hashelement_t*)vector_get(h->buckets[i],j);
 				vector_push(output, element->key);
 			}
 		}
@@ -492,7 +492,7 @@ vector_t* hashtable_values(hashtable_t* h)
 			int j;
 			for(j=0;j<h->buckets[i]->length;j++)
 			{
-				hashelement_t* element=(hashelement_t*)h->buckets[i]->data[j];
+				hashelement_t* element=(hashelement_t*)vector_get(h->buckets[i],j);
 				vector_push(output, element->value);
 			}
 		}
@@ -511,7 +511,7 @@ hashelement_t* hashtable_first_element(hashtable_t* h)
 		{
 			h->current_bucket=i;
 			h->current_bucket_element=0;
-			hashelement_t* element=(hashelement_t*)h->buckets[i]->data[h->current_bucket_element];
+			hashelement_t* element=(hashelement_t*)vector_get(h->buckets[i],h->current_bucket_element);
 			return element;
 		}
 	}
@@ -533,7 +533,7 @@ hashelement_t* hashtable_next_element(hashtable_t* h)
 				continue;
 			}
 			h->current_bucket=i;
-			hashelement_t* element=(hashelement_t*)h->buckets[i]->data[h->current_bucket_element];
+			hashelement_t* element=(hashelement_t*)vector_get(h->buckets[i],h->current_bucket_element);
 			return element;
 		}
 	}

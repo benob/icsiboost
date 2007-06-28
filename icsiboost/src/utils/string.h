@@ -31,29 +31,29 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #include <stdio.h>
 
 typedef struct string {
-	int length;
-	int size;
+	size_t length;
+	size_t size;
 	char* data;
 } string_t;
 
 typedef struct regexstatus {
 	regex_t expression;
 	vector_t* groups;
-	int start;
-	int end;
+	size_t start;
+	size_t end;
 } regexstatus_t;
 
-string_t* string_resize(string_t* input,int newSize);
+string_t* string_resize(string_t* input,size_t newSize);
 string_t* string_new(const char* string);
 string_t* string_new_empty();
-string_t* string_new_from_to(const char* string,int from, int to);
+string_t* string_new_from_to(const char* string,size_t from, size_t to);
 string_t* string_copy(string_t* input);
 string_t* string_append_cstr(string_t* input, const char* peer);
 string_t* string_prepend_cstr(string_t* input, const char* peer);
 string_t* string_append(string_t* input, string_t* peer);
 string_t* string_prepend(string_t* input, string_t* peer);
 void string_free(string_t* input);
-string_t* string_substr(string_t* input,int from,int to);
+string_t* string_substr(string_t* input,size_t from,size_t to);
 string_t* string_reverse(string_t* input);
 string_t* string_chomp(string_t* input);
 string_t* string_join(string_t* separator, array_t* parts);
@@ -65,7 +65,8 @@ array_t* string_split(const char* separator, string_t* input);
 int string_replace(string_t* input, const char* pattern, string_t* replacement, int flags);
 void string_array_free(array_t* input);
 void string_vector_free(vector_t* input);
-int string_to_int(string_t* input);
+int32_t string_to_int32(string_t* input);
+int64_t string_to_int64(string_t* input);
 double string_to_double(string_t* input);
 float string_to_float(string_t* input);
 string_t* string_sprintf(const char* format, ...);

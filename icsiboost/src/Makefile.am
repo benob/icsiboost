@@ -15,6 +15,11 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
+MAKEFLAGS=-s
+
+# should move to -Werror (all warnings are errors)
+INCLUDES=-Wall -Werror-implicit-function-declaration
+
 utils = utils/vector.c utils/string.c utils/hashtable.c utils/array.c utils/mapped.c
 utils += utils/vector.h utils/string.h utils/hashtable.h utils/array.h utils/mapped.h utils/utils.h
 

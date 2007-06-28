@@ -19,7 +19,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 
 #include <math.h>
 
-string_t* string_resize(string_t* input,int newSize)
+string_t* string_resize(string_t* input,size_t newSize)
 {
 	if(newSize==input->size)return input;
 	input->data=REALLOC(input->data,newSize);
@@ -29,7 +29,7 @@ string_t* string_resize(string_t* input,int newSize)
 
 string_t* string_new(const char* string)
 {
-	int length=strlen(string);
+	size_t length=strlen(string);
 	string_t* output=(string_t*)MALLOC(sizeof(string_t));
 #ifdef USE_GC
 	output->data=GC_MALLOC_ATOMIC(length+1);
@@ -44,7 +44,7 @@ string_t* string_new(const char* string)
 
 string_t* string_new_empty()
 {
-	int length=0;
+	size_t length=0;
 	string_t* output=(string_t*)MALLOC(sizeof(string_t));
 #ifdef USE_GC
 	output->data=GC_MALLOC_ATOMIC(length+1);
@@ -57,9 +57,9 @@ string_t* string_new_empty()
 	return output;
 }
 
-string_t* string_new_from_to(const char* string,int from, int to)
+string_t* string_new_from_to(const char* string,size_t from, size_t to)
 {
-	int length=to-from;
+	size_t length=to-from;
 	if(length<0)
 	{
 		length=0;
@@ -85,7 +85,7 @@ string_t* string_copy(string_t* input)
 
 string_t* string_append_cstr(string_t* input, const char* peer)
 {
-	int length=strlen(peer);
+	size_t length=strlen(peer);
 	string_resize(input,input->length+length+1);
 	memcpy(input->data+input->length,peer,length+1);
 	input->length+=length;
@@ -94,7 +94,7 @@ string_t* string_append_cstr(string_t* input, const char* peer)
 
 string_t* string_prepend_cstr(string_t* input, const char* peer)
 {
-	int length=strlen(peer);
+	size_t length=strlen(peer);
 	string_resize(input,input->length+length+1);
 	memmove(input->data+length,input->data,input->length+1);
 	memcpy(input->data,peer,length);
@@ -125,7 +125,7 @@ void string_free(string_t* input)
 	FREE(input);
 }
 
-string_t* string_substr(string_t* input,int from,int to)
+string_t* string_substr(string_t* input,size_t from,size_t to)
 {
 	if(to<from || from<0 || to>input->length)return NULL;
 	string_t* output=(string_t*)MALLOC(sizeof(string_t));
@@ -143,8 +143,8 @@ string_t* string_substr(string_t* input,int from,int to)
 
 string_t* string_reverse(string_t* input)
 {
-	int i=0;
-	int j=input->length-1;
+	size_t i=0;
+	size_t j=input->length-1;
 	for(;i<input->length/2;i++)
 	{
 		char tmp=input->data[i];
@@ -157,7 +157,7 @@ string_t* string_reverse(string_t* input)
 
 string_t* string_chomp(string_t* input)
 {
-	int i=input->length;
+	size_t i=input->length;
 	while(i>0 && (input->data[i]=='\n' || input->data[i]=='\r'))i--;
 	if(i>0 && i<input->length)input->data[i+1]='\0';
 	input->length=i;
@@ -169,7 +169,7 @@ string_t* string_join(string_t* separator, array_t* parts)
 	if(parts->first==NULL)return string_new("");
 	arrayelement_t* current=parts->first;
 	// compute length
-	int length=((string_t*)current->data)->length;
+	size_t length=((string_t*)current->data)->length;
 	current=current->next;
 	do
 	{
@@ -233,10 +233,10 @@ regexstatus_t* string_match(string_t* input, const char* pattern, int flags, reg
 	int result=regexec(&status->expression,input->data,status->expression.re_nsub,match,flags);
 	if(result==0)
 	{
-		int i=0;
+		size_t i=0;
 		for(i=0;i<status->expression.re_nsub;i++)
 		{
-			status->groups->data[i]=string_new_from_to(input->data,match[i].rm_so,match[i].rm_eo);
+			vector_set(status->groups,i,string_new_from_to(input->data,match[i].rm_so,match[i].rm_eo));
 		}
 		status->start=match[0].rm_so;
 		status->end=match[0].rm_eo;
@@ -290,7 +290,7 @@ int string_replace(string_t* input, const char* pattern, string_t* replacement, 
 	if(last_start!=input->length)array_push(output,string_new_from_to(input->data,last_start,input->length));
 	regfree(&expression);
 	string_t* joint_output=string_join_cstr("",output);
-	int i;
+	size_t i;
 	for(i=0;i<output->length;i++)string_free((string_t*)array_get(output,i));
 	array_free(output);
 	FREE(input->data);
@@ -303,7 +303,7 @@ int string_replace(string_t* input, const char* pattern, string_t* replacement, 
 
 void string_array_free(array_t* input)
 {
-	int i;
+	size_t i;
 	for(i=0;i<input->length;i++)
 	{
 		string_free((string_t*)array_get(input,i));
@@ -313,20 +313,29 @@ void string_array_free(array_t* input)
 
 void string_vector_free(vector_t* input)
 {
-	int i;
+	size_t i;
 	for(i=0;i<input->length;i++)
 	{
-		string_free((string_t*)input->data[i]);
+		string_free((string_t*)vector_get(input,i));
 	}
 	vector_free(input);
 }
 
-int string_to_int(string_t* input)
+int32_t string_to_int32(string_t* input)
 {
 	char* error=NULL;
-	int output=strtol(input->data,&error,10);
+	int32_t output=strtol(input->data,&error,10);
 	if(error!=NULL && *error=='\0')return output;
-	warn("string_to_int(%s) failed",input->data);
+	warn("string_to_int32(%s) failed",input->data);
+	return 0;
+}
+
+int64_t string_to_int64(string_t* input)
+{
+	char* error=NULL;
+	int64_t output=strtoll(input->data,&error,10);
+	if(error!=NULL && *error=='\0')return output;
+	warn("string_to_int64(%s) failed",input->data);
 	return 0;
 }
 

@@ -22,6 +22,13 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #define _ISOC99_SOURCE // to get the NAN symbol
 #define USE_THREADS
 
+#include "utils/utils.h"
+#include "utils/vector.h"
+#include "utils/string.h"
+#include "utils/hashtable.h"
+#include "utils/mapped.h"
+#include "utils/array.h"
+
 #ifdef USE_THREADS
 #ifndef _REENTRANT
 #define _REENTRANT
@@ -36,14 +43,8 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <math.h>
-
-#include "utils/utils.h"
-#include "utils/vector.h"
-#include "utils/string.h"
-#include "utils/hashtable.h"
-#include "utils/mapped.h"
-#include "utils/array.h"
 
 /*
 WARNING:
@@ -90,7 +91,7 @@ typedef struct example { // an instance
 typedef struct weakclassifier { // a weak learner
 	template_t* template;          // the corresponding template
 	int type;                      // type in CLASSIFIER_TYPE_TEXT or CLASSIFIER_TYPE_THRESHOLD
-	int token;                     // token for TEXT classifier
+	int32_t token;                     // token for TEXT classifier
 	int column;                    // redundant with template
 	double threshold;              // threshold for THRESHOLD classifier
 	double alpha;                  // alpha from the paper
@@ -108,9 +109,10 @@ int verbose=0;
 
 weakclassifier_t* train_text_stump(double min_objective, template_t* template, vector_t* examples, double** sum_of_weights, int num_classes)
 {
-	int i,l,t;
+	int i,l;
 	int column=template->column;
-	int num_tokens=template->dictionary_keys->length;
+	size_t num_tokens=template->dictionary_keys->length;
+	int32_t t;
 
 	double* weight[2][num_classes]; // weight[b][label][token] (=> D() in the paper) , only for token presence (absence is infered from sum_of_weights)
 	for(l=0;l<num_classes;l++)
@@ -128,8 +130,8 @@ weakclassifier_t* train_text_stump(double min_objective, template_t* template, v
 	}
 	for(i=0;i<examples->length;i++) // compute the presence weights
 	{
-		example_t* example=(example_t*)examples->data[i];
-		int token=(int)example->features->data[column];
+		example_t* example=(example_t*)vector_get(examples,i);
+		int32_t token=vector_get_int32(example->features,column);
 		for(l=0;l<num_classes;l++)
 		{
 			weight[b(example,l)][l][token]+=example->weight[l];
@@ -199,14 +201,15 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 	if(ordered==NULL) // only order examples once, then keep the result in the template
 	{
 		ordered=vector_new(examples->length);
-		for(i=0;i<examples->length;i++)ordered->data[i]=(void*)i;
+		ordered->length=examples->length;
+		for(i=0;i<examples->length;i++)vector_set_int32(ordered,i,(int32_t)i);
 		ordered->length=examples->length;
 		int local_comparator(const void* a, const void* b)
 		{
 			int aa=*(int*)a;
 			int bb=*(int*)b;
-			float aa_value=*(float*)&((example_t*)examples->data[aa])->features->data[column];
-			float bb_value=*(float*)&((example_t*)examples->data[bb])->features->data[column];
+			float aa_value=vector_get_float(((example_t*)vector_get(examples,aa))->features,column);
+			float bb_value=vector_get_float(((example_t*)vector_get(examples,bb))->features,column);
 			if(isnan(aa_value) || aa_value>bb_value)return 1; // put the NAN (unknown values) at the end of the list
 			if(isnan(bb_value) || aa_value<bb_value)return -1;
 			return 0;
@@ -224,11 +227,11 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 		}
 	for(i=0;i<ordered->length;i++) // compute the "unknown" weights and the weight of examples after threshold
 	{
-		example_t* example=examples->data[(int)ordered->data[i]];
-		//fprintf(stderr,"%d %f\n",column,*(float*)&example->features->data[column]);
+		example_t* example=vector_get(examples,vector_get_int32(ordered,i));
+		//fprintf(stderr,"%d %f\n",column,*(float*)&vector_get(example->features,column);
 		for(l=0;l<num_classes;l++)
 		{
-			if(isnan(*(float*)&example->features->data[column]))
+			if(isnan(vector_get_float(example->features,column)))
 				weight[0][b(example,l)][l]+=example->weight[l];
 			else
 				weight[2][b(example,l)][l]+=example->weight[l];
@@ -250,15 +253,15 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 
 	for(i=0;i<ordered->length-1;i++) // compute the objective function at every possible threshold (in between examples)
 	{
-		example_t* example=(example_t*)examples->data[(int)ordered->data[i]];
-		if(isnan(*(float*)&example->features->data[column]))continue; // skip unknown values
-		example_t* next_example=(example_t*)examples->data[(int)ordered->data[i+1]];
+		example_t* example=(example_t*)vector_get(examples,(int)vector_get_int32(ordered,i));
+		if(isnan(vector_get_float(example->features,column)))continue; // skip unknown values
+		example_t* next_example=(example_t*)vector_get(examples,(int)vector_get_int32(ordered,i+1));
 		for(l=0;l<num_classes;l++) // update the objective function by putting the current example the other side of the threshold
 		{
 			weight[1][b(example,l)][l]+=example->weight[l];
 			weight[2][b(example,l)][l]-=example->weight[l];
 		}
-		if(example->features->data[column]==next_example->features->data[column])continue; // same value
+		if(vector_get(example->features,column)==vector_get(next_example->features,column))continue; // same value
 		double objective=0;
 		for(l=0;l<num_classes;l++) // compute objective Z()
 		{
@@ -276,7 +279,7 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 		if(objective-min_objective<-1e-11) // get argmin
 		{
 			classifier->objective=objective;
-			classifier->threshold=(*(float*)&next_example->features->data[column]+*(float*)&example->features->data[column])/2; // threshold between current and next example
+			classifier->threshold=(vector_get_float(next_example->features,column)+vector_get_float(example->features,column))/2; // threshold between current and next example
 			if(isnan(classifier->threshold))die("threshold is nan, column=%d, objective=%f, i=%d",column,objective,i); // should not happend
 			//fprintf(stdout," %d:%d:%f",column,i,classifier->threshold);
 			min_objective=objective;
@@ -323,10 +326,9 @@ workertoolbox_t* toolbox=NULL;
 void* threaded_worker(void* data)
 {
 	int column;
-	int worker_num=(int)data;
+	int worker_num=*(int*)data;
 	while(!finished)
 	{
-		//fprintf(stdout,"%d worker waiting\n",worker_num);
 		sem_wait(toolbox->ready_to_process);
 		if(finished)pthread_exit(0);
 		LOCK(toolbox->next_column);
@@ -387,17 +389,17 @@ double compute_classification_error(vector_t* classifiers, vector_t* examples, d
 	double normalization=0;
 	for(i=0;i<examples->length;i++)
 	{
-		example_t* example=(example_t*)examples->data[i];
+		example_t* example=(example_t*)vector_get(examples,i);
 		for(l=0;l<num_classes;l++)
 		{
 			//example->score[l]=0;
 			//for(j=0;j<classifiers->length;j++)
 			j=classifiers->length-1; // only update score with current classifier
 			{
-				weakclassifier_t* classifier=(weakclassifier_t*)classifiers->data[j];
+				weakclassifier_t* classifier=(weakclassifier_t*)vector_get(classifiers,j);
 				if(classifier->type==CLASSIFIER_TYPE_THRESHOLD)
 				{
-					float value=*(float*)&example->features->data[classifier->column];
+					float value=vector_get_float(example->features,classifier->column);
 					if(isnan(value)) // unknown value -- need to update weight?
 					{
 						example->score[l]+=classifier->alpha*classifier->c0[l];
@@ -419,7 +421,7 @@ double compute_classification_error(vector_t* classifiers, vector_t* examples, d
 				}
 				else if(classifier->type==CLASSIFIER_TYPE_TEXT)
 				{
-					int token=(int)example->features->data[classifier->column];
+					int32_t token=vector_get_int32(example->features,classifier->column);
 					if(token==0) // unknown value -- need to update weight?
 					{
 						example->score[l]+=classifier->alpha*classifier->c0[l];
@@ -467,7 +469,7 @@ double compute_classification_error(vector_t* classifiers, vector_t* examples, d
 		}
 		for(i=0;i<examples->length;i++) // normalize the weights and do some stats for debuging
 		{
-			example_t* example=(example_t*)examples->data[i];
+			example_t* example=(example_t*)vector_get(examples,i);
 			//fprintf(stdout,"%d",i);
 			for(l=0;l<num_classes;l++)
 			{
@@ -505,7 +507,7 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 	while(begining_of_line < end_of_file)// && examples->length<10000)
 	{
 		example_t* example = MALLOC(sizeof(example_t)); // that's one new example per line
-		example->features = vector_new(templates->length);
+		example->features = vector_new_type(templates->length,sizeof(int32_t)); // we will store 32bit ints and floats
 		example->features->length=templates->length;
 		example->weight = NULL;
 		char* current = begining_of_line;
@@ -526,7 +528,7 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 			char field[length+1];
 			memcpy(field, token, length);
 			field[length] = '\0';
-			template_t* template = (template_t*)templates->data[i];
+			template_t* template = (template_t*)vector_get(templates,i);
 			if(template->type == FEATURE_TYPE_CONTINUOUS)
 			{
 				float value=NAN;// unknwon is represented by Not-A-Number (NAN)
@@ -535,15 +537,14 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 				{
 					value = strtof(field, &error_location);
 					if(error_location==NULL || *error_location!='\0')
-					   die("could not convert \"%s\" to a number, line %d, char %d in %s", token, line_num+1, token-begining_of_line+1, filename);
+					   die("could not convert \"%s\" to a number, line %d, char %td in %s", field, line_num+1, token-begining_of_line+1, filename);
 				}
-				example->features->data[i] = *(void**)&value;
-			}
+				vector_set_float(example->features,i,value); }
 			else if(template->type == FEATURE_TYPE_TEXT)
 			{
 				if(strcmp(field,"?")) // if not unknwon value
 				{
-					int word_id = (int)hashtable_get_or_default(template->dictionary, field, length, (void*)-1);
+					int32_t word_id = (int32_t)hashtable_get_or_default(template->dictionary, field, length, (void*)-1);
 					if(word_id == -1)
 					{
 						if(in_test)word_id=0;
@@ -556,22 +557,22 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 						}
 					}
 					//if(!in_test)
-					//	template->dictionary_counts->data[word_id]=(void*)((int)template->dictionary_counts->data[word_id]+1);
+					//	vector_set(template->dictionary_counts,word_id,(void*)((int)vector_get(template->dictionary_counts,word_id,)+1));
 					//fprintf(stdout,"%d %d %s\n",i , word_id, field);
-					example->features->data[i] = (void*)word_id;
+					vector_set_int32(example->features,i,word_id);
 				}
 				else
 				{
-					example->features->data[i] = NULL; // unknown token is 0 (aka NULL)
+					vector_set_int32(example->features,i,0); // unknown token is 0 (aka NULL)
 				}
 			}
 			else
 			{
-				example->features->data[i] = NULL; // unsupported feature type: everything is unknown
+				vector_set_int32(example->features,i,0); // unsupported feature type: everything is unknown
 			}
 			current++;
 		}
-		//fprintf(stdout,"%d %p\n",examples->length,example->features->data[0]);
+		//fprintf(stdout,"%d %p\n",examples->length,vector_get(example->features,0));
 		char* class = current; // get class label
 		while(current < end_of_file && *current != '\n') current++; // up to end of line
 		if(current >= end_of_file) die("unexpected end of file, line %d in %s", line_num+1, filename);
@@ -584,9 +585,9 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 		int id = 0;
 		for(id = 0; id < classes->length; id++) // find class linearly as we usually have a few classes
 		{
-			if(!strncmp(((string_t*)classes->data[id])->data, class, length)) break;
+			if(!strncmp(((string_t*)vector_get(classes,id))->data, class, length)) break;
 		}
-		if(id == classes->length) die("unknown class \"%s\", line %d, char %d in %s", class_token, line_num+1, class-begining_of_line+1, filename);
+		if(id == classes->length) die("unknown class \"%s\", line %d, char %td in %s", class_token, line_num+1, class-begining_of_line+1, filename);
 		example->class = id;
 		vector_push(examples, example); // store example
 		begining_of_line = current+1;
@@ -597,19 +598,19 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 	{
 		for(i=0;i<templates->length;i++)
 		{
-			template_t* template=(template_t*)templates->data[i];
+			template_t* template=(template_t*)vector_get(templates,i);
 			hashtable_optimize(template->dictionary);
 			vector_optimize(template->dictionary_keys);
 		}
 		/*for(i=0; i<templates->length; i++)
 		{
-			template_t* template=(template_t*)templates->data[i];
+			template_t* template=(template_t*)vector_get(templates,i);
 			for(j=0; j<template->dictionary_counts->length; j++)
 			{
-				if((int)template->dictionary_counts->data[j]<feature_count_cutoff)
+				if((int)vector_get(template->dictionary_counts,j)<feature_count_cutoff)
 				{
-					void* element=hashtable_remove(template->dictionary,template->dictionary_keys->data[j],strlen(template->dictionary_keys->data[j]));
-					if(element!=NULL)die("YOUPI %s", (char*)template->dictionary_keys->data[j]);
+					void* element=hashtable_remove(template->dictionary,vector_get(template->dictionary_keys,j),strlen(vector_get(template->dictionary_keys,j)));
+					if(element!=NULL)die("YOUPI %s", (char*)vector_get(template->dictionary_keys,j));
 				}
 			}
 		}*/
@@ -617,8 +618,8 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 	// initalize weights and score
 	for(i=0;i<examples->length;i++)
 	{
-		example_t* example=(example_t*)examples->data[i];
-		//fprintf(stdout,"%d %d %p\n",i,(int)example->features->data[0], example->weight);
+		example_t* example=(example_t*)vector_get(examples,i);
+		//fprintf(stdout,"%d %d %p\n",i,(int)vector_get(example->features,0), example->weight);
 		example->weight=(double*)MALLOC(classes->length*sizeof(double));
 		example->score=(double*)MALLOC(classes->length*sizeof(double));
 		for(j=0;j<classes->length;j++)
@@ -627,7 +628,7 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 			example->score[j]=0.0;
 		}
 	}
-	if(verbose)fprintf(stdout,"EXAMPLES: %s %d\n",filename, examples->length);
+	if(verbose)fprintf(stdout,"EXAMPLES: %s %td\n",filename, examples->length);
 	mapped_free(input);
 	return examples;
 }
@@ -658,7 +659,7 @@ int main(int argc, char** argv)
 			string_free(arg);
 			arg=(string_t*)array_shift(args);
 			if(arg==NULL)die("value needed for -n");
-			maximum_iterations=string_to_int(arg);
+			maximum_iterations=string_to_int32(arg);
 			if(maximum_iterations<=0)die("invalid value for -n [%s]",arg->data);
 		}
 		else if(string_eq_cstr(arg,"-f"))
@@ -667,7 +668,7 @@ int main(int argc, char** argv)
 			/* string_free(arg);
 			arg=(string_t*)array_shift(args);
 			if(arg==NULL)die("value needed for -f");
-			feature_count_cutoff=string_to_int(arg);
+			feature_count_cutoff=string_to_int32(arg);
 			if(feature_count_cutoff<=0)die("invalid value for -f [%s]",arg->data);*/
 		}
 		else if(string_eq_cstr(arg,"-E"))
@@ -684,7 +685,7 @@ int main(int argc, char** argv)
 			string_free(arg);
 			arg=(string_t*)array_shift(args);
 			if(arg==NULL)die("value needed for -j");
-			number_of_workers=string_to_int(arg);
+			number_of_workers=string_to_int32(arg);
 			if(number_of_workers<=0)die("invalid value for -j [%s]",arg->data);
 #else
 			die("thread support has not been activated at compile time");
@@ -752,7 +753,7 @@ int main(int argc, char** argv)
 			if(verbose)
 			{
 				fprintf(stdout,"CLASSES:");
-				for(i=0;i<classes->length;i++)fprintf(stdout," %s",((string_t*)classes->data[i])->data);
+				for(i=0;i<classes->length;i++)fprintf(stdout," %s",((string_t*)vector_get(classes,i))->data);
 				fprintf(stdout,"\n");
 			}
 		}
@@ -796,7 +797,7 @@ int main(int argc, char** argv)
 	int l;
 	for(i=0;i<examples->length;i++)
 	{
-		example_t* example=(example_t*)examples->data[i];
+		example_t* example=(example_t*)vector_get(examples,i);
 		for(l=0;l<classes->length;l++)
 		{
 			sum_of_weights[b(example,l)][l]+=example->weight[l];
@@ -834,7 +835,7 @@ int main(int argc, char** argv)
 		pthread_attr_t attributes;
 		pthread_attr_init(&attributes);
 		pthread_attr_setdetachstate(&attributes,PTHREAD_CREATE_JOINABLE);
-		pthread_create(&workers[i],&attributes,threaded_worker,i);
+		pthread_create(&workers[i],&attributes,threaded_worker,&i);
 		pthread_attr_destroy(&attributes);
 	}
 #endif
@@ -850,9 +851,10 @@ int main(int argc, char** argv)
 		LOCK(toolbox->best_classifier);
 		toolbox->best_classifier->objective=1.0;
 		UNLOCK(toolbox->best_classifier);
+#else
+		double min_objective=1.0;
 #endif
 		weakclassifier_t* classifier=NULL;
-		double min_objective=1.0;
 #ifdef USE_THREADS
 		for(i=0;i<templates->length;i++) // find the best classifier
 		{
@@ -919,7 +921,7 @@ int main(int argc, char** argv)
 			char* token="";
 			if(classifier->type==CLASSIFIER_TYPE_TEXT)
 			{
-				token=classifier->template->dictionary_keys->data[classifier->token];
+				token=vector_get(classifier->template->dictionary_keys,classifier->token);
 			}
 			fprintf(stdout,"\n%s:%s\n",classifier->template->name->data,token);
 			if(classifier->type==CLASSIFIER_TYPE_THRESHOLD)
@@ -946,18 +948,18 @@ int main(int argc, char** argv)
 
 	for(i = 0; i < classifiers->length; i++)
 	{
-		weakclassifier_t* classifier=(weakclassifier_t*)classifiers->data[i];
+		weakclassifier_t* classifier=(weakclassifier_t*)vector_get(classifiers,i);
 		FREE(classifier->c0);
 		FREE(classifier->c1);
 		FREE(classifier->c2);
 		FREE(classifier);
 	}
 	vector_free(classifiers);
-	for(i=0; i<classes->length; i++) string_free((string_t*)classes->data[i]);
+	for(i=0; i<classes->length; i++) string_free((string_t*)vector_get(classes,i));
 	vector_free(classes);
 	for(i=0; i<templates->length; i++)
 	{
-		template_t* template=(template_t*)templates->data[i];
+		template_t* template=(template_t*)vector_get(templates,i);
 		string_free(template->name);
 		hashtable_free(template->dictionary);
 		vector_apply(template->dictionary_keys, vector_freedata, NULL);
@@ -970,7 +972,7 @@ int main(int argc, char** argv)
 	{
 		for(i=0; i<dev_examples->length; i++)
 		{
-			example_t* example=(example_t*)dev_examples->data[i];
+			example_t* example=(example_t*)vector_get(dev_examples,i);
 			vector_free(example->features);
 			FREE(example->weight);
 			FREE(example->score);
@@ -982,7 +984,7 @@ int main(int argc, char** argv)
 	{
 		for(i=0; i<test_examples->length; i++)
 		{
-			example_t* example=(example_t*)test_examples->data[i];
+			example_t* example=(example_t*)vector_get(test_examples,i);
 			vector_free(example->features);
 			FREE(example->weight);
 			FREE(example->score);
@@ -992,7 +994,7 @@ int main(int argc, char** argv)
 	}
 	for(i=0; i<examples->length; i++)
 	{
-		example_t* example=(example_t*)examples->data[i];
+		example_t* example=(example_t*)vector_get(examples,i);
 		vector_free(example->features);
 		FREE(example->weight);
 		FREE(example->score);

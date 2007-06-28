@@ -158,6 +158,10 @@ sbindir = @sbindir@
 sharedstatedir = @sharedstatedir@
 sysconfdir = @sysconfdir@
 target_alias = @target_alias@
+MAKEFLAGS = -s
+
+# should move to -Werror (all warnings are errors)
+INCLUDES = -Wall -Werror-implicit-function-declaration
 utils = utils/vector.c utils/string.c utils/hashtable.c utils/array.c \
 	utils/mapped.c utils/vector.h utils/string.h utils/hashtable.h \
 	utils/array.h utils/mapped.h utils/utils.h

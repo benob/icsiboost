@@ -1,6 +1,6 @@
 rm -f config.cache
 rm -f acconfig.h
-aclocal -I m4
+aclocal
 autoconf
 #acconfig
 #autoheader

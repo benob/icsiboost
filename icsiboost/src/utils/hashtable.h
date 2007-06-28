@@ -28,16 +28,16 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 
 typedef struct hashelement {
 	void* key;
-	int key_length;
+	size_t key_length;
 	void* value;
 } hashelement_t;
 
 typedef struct hashtable {
-	int size;
+	size_t size;
 	vector_t** buckets;
 	void* metadata;
-	int current_bucket;
-	int current_bucket_element;
+	size_t current_bucket;
+	size_t current_bucket_element;
 } hashtable_t;
 
 unsigned int _hashtable_function(void* key,int key_length);

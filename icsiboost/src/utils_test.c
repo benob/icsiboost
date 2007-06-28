@@ -21,6 +21,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #include "utils/utils.h"
 #include "utils/string.h"
@@ -99,7 +100,6 @@ int main(int argc, char** argv)
 	fprintf(stderr,"vector length=%d\n",vector->length);
 	for(i=0;i<vector->length;i++)
 	{
-		//fprintf(stderr,"%d, ",(int)vector->data[i]);
 		fprintf(stderr,"%d, ",(int)vector_get(vector,i));
 	}
 	fprintf(stderr,"\n");
@@ -210,7 +210,7 @@ int main(int argc, char** argv)
 	fprintf(stderr,"%s\n",string->data);
 	//string_free(string);
 	string3=string_new("3");
-	int string3_int=string_to_int(string3);
+	int32_t string3_int=string_to_int32(string3);
 	fprintf(stderr,"int=%d\n",string3_int);
 	//string_free(string3);
 	string3=string_new("3.33333");
@@ -259,13 +259,13 @@ int main(int argc, char** argv)
 	vector_t* keys=hashtable_keys(hashtable);
 	for(i=0;i<keys->length;i++)
 	{
-		fprintf(stderr,"key => %p\n",keys->data[i]);
+		fprintf(stderr,"key => %p\n",vector_get(keys,i));
 	}
 	//vector_free(keys);
 	vector_t* values=hashtable_values(hashtable);
 	for(i=0;i<values->length;i++)
 	{
-		fprintf(stderr,"value => %d\n",(int)values->data[i]);
+		fprintf(stderr,"value => %d\n",(int)vector_get(values,i));
 	}
 	//vector_free(values);
 	for(value=(char*)hashtable_first_value(hashtable);value;value=(char*)hashtable_next_value(hashtable))
