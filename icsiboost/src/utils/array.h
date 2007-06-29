@@ -18,7 +18,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #ifndef _ARRAY_H_
 #define _ARRAY_H_
 
-#include "utils/utils.h"
+#include "utils/common.h"
 #include "utils/vector.h"
 
 typedef struct arrayelement {

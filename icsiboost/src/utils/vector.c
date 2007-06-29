@@ -205,7 +205,7 @@ vector_t* vector_new_type(size_t initialSize, size_t element_size)
 	if(v==NULL)return NULL;
 	v->data.as_void=NULL;//MALLOC(sizeof(void*)*initialSize);
 	v->size=0;
-	v->element_size=sizeof(void*);
+	v->element_size=element_size;
 	v->length=0;
 	_vector_resize(v,initialSize);
 	if(v->data.as_void==NULL)

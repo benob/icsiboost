@@ -23,7 +23,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
    - more operations on string arrays, like grep(), free_strings()...
    */
 
-#include "utils/utils.h"
+#include "utils/common.h"
 #include "utils/vector.h"
 #include "utils/array.h"
 

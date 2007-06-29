@@ -19,10 +19,9 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 # include <config.h>
 #endif
 
-#define _ISOC99_SOURCE // to get the NAN symbol
-//#define USE_THREADS
+#define USE_THREADS
 
-#include "utils/utils.h"
+#include "utils/common.h"
 #include "utils/vector.h"
 #include "utils/string.h"
 #include "utils/hashtable.h"
@@ -30,10 +29,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #include "utils/array.h"
 
 #ifdef USE_THREADS
-#ifndef _REENTRANT
-#define _REENTRANT
-#endif
-#include <semaphore.h>
+#include "utils/threads.h"
 #include <pthread.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -45,6 +41,34 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+
+/*int num_EXP=0;
+double EXP(double number)
+{
+	num_EXP++;
+	if(isnan(number))die("exp(): had a NAN");
+	return exp(number);
+}
+
+int num_SQRT=0;
+double SQRT(double number)
+{
+	num_SQRT++;
+	if(isnan(number))die("sqrt(): had a NAN");
+	return sqrt(number);
+}
+
+int num_LOG=0;
+double LOG(double number)
+{
+	num_LOG++;
+	if(isnan(number))die("log(): had a NAN");
+	return log(number);
+}*/
+
+#define EXP(a) exp(a)
+#define SQRT(a) sqrt(a)
+#define LOG(a) log(a)
 
 /*
 WARNING:
@@ -163,12 +187,12 @@ weakclassifier_t* train_text_stump(double min_objective, template_t* template, v
 	for(t=1;t<num_tokens;t++)
 	{
 		double objective=0;
-		for(l=0;l<num_classes;l++) // compute the objective function Z()=sum_j(sum_l(sqrt(W+*W-))
+		for(l=0;l<num_classes;l++) // compute the objective function Z()=sum_j(sum_l(SQRT(W+*W-))
 		{
 			if(weight[0][l][t]<0)weight[0][l][t]=0.0;
 			if(weight[1][l][t]<0)weight[1][l][t]=0.0;
-			objective+=sqrt((sum_of_weights[1][l]-weight[1][l][t])*(sum_of_weights[0][l]-weight[0][l][t]));
-			objective+=sqrt(weight[1][l][t]*weight[0][l][t]);
+			objective+=SQRT((sum_of_weights[1][l]-weight[1][l][t])*(sum_of_weights[0][l]-weight[0][l][t]));
+			objective+=SQRT(weight[1][l][t]*weight[0][l][t]);
 		}
 		objective*=2;
 		//fprintf(stdout,"DEBUG: column=%d token=%d obj=%f\n",column,t,objective);
@@ -179,11 +203,11 @@ weakclassifier_t* train_text_stump(double min_objective, template_t* template, v
 			classifier->objective=objective;
 			for(l=0;l<num_classes;l++)  // update c0, c1 and c2 => c0 and c1 are the same for text stumps
 			{
-				classifier->c0[l]=0.5*log((sum_of_weights[1][l]-weight[1][l][t]+epsilon)/(sum_of_weights[0][l]-weight[0][l][t]+epsilon));
+				classifier->c0[l]=0.5*LOG((sum_of_weights[1][l]-weight[1][l][t]+epsilon)/(sum_of_weights[0][l]-weight[0][l][t]+epsilon));
 				classifier->c1[l]=classifier->c0[l];
 				//classifier->c0[l]=0;
-				//classifier->c1[l]=0.5*log((sum_of_weights[1][l]-weight[1][l][t]+epsilon)/(sum_of_weights[0][l]-weight[0][l][t]+epsilon));
-				classifier->c2[l]=0.5*log((weight[1][l][t]+epsilon)/(weight[0][l][t]+epsilon));
+				//classifier->c1[l]=0.5*LOG((sum_of_weights[1][l]-weight[1][l][t]+epsilon)/(sum_of_weights[0][l]-weight[0][l][t]+epsilon));
+				classifier->c2[l]=0.5*LOG((weight[1][l][t]+epsilon)/(weight[0][l][t]+epsilon));
 			}
 		}
 	}
@@ -243,7 +267,7 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 	for(i=0;i<ordered->length;i++) // compute the "unknown" weights and the weight of examples after threshold
 	{
 		example_t* example=vector_get(examples,vector_get_int32(ordered,i));
-		//fprintf(stderr,"%d %f\n",column,vector_get_float(example->features,column));
+		//fprintf(stdout,"%d %f\n",column,vector_get_float(example->features,column));
 		for(l=0;l<num_classes;l++)
 		{
 			if(isnan(vector_get_float(example->features,column)))
@@ -277,7 +301,7 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 			weight[1][b(example,l)][l]+=example->weight[l];
 			weight[2][b(example,l)][l]-=example->weight[l];
 		}
-		if(vector_get(example->features,column)==vector_get(next_example->features,column))continue; // same value
+		if(vector_get_float(example->features,column)==vector_get_float(next_example->features,column))continue; // same value
 		double objective=0;
 		for(l=0;l<num_classes;l++) // compute objective Z()
 		{
@@ -287,24 +311,24 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 			if(weight[1][0][l]<0)weight[1][0][l]=0.0;
 			if(weight[2][1][l]<0)weight[2][1][l]=0.0;
 			if(weight[2][0][l]<0)weight[2][0][l]=0.0;
-			objective+=sqrt(weight[0][1][l]*weight[0][0][l]);
-			objective+=sqrt(weight[1][1][l]*weight[1][0][l]);
-			objective+=sqrt(weight[2][1][l]*weight[2][0][l]);
+			objective+=SQRT(weight[0][1][l]*weight[0][0][l]);
+			objective+=SQRT(weight[1][1][l]*weight[1][0][l]);
+			objective+=SQRT(weight[2][1][l]*weight[2][0][l]);
 		}
 		objective*=2;
 		//fprintf(stdout,"DEBUG: column=%d threshold=%f obj=%f\n",column,(vector_get_float(next_example->features,column)+vector_get_float(example->features,column))/2,objective);
 		if(objective-min_objective<-1e-11) // get argmin
 		{
 			classifier->objective=objective;
-			classifier->threshold=(vector_get_float(next_example->features,column)+vector_get_float(example->features,column))/2; // threshold between current and next example
+			classifier->threshold=(vector_get_float(next_example->features,column)+vector_get_float(example->features,column))/2.0; // threshold between current and next example
 			if(isnan(classifier->threshold))die("threshold is nan, column=%d, objective=%f, i=%zd",column,objective,i); // should not happend
 			//fprintf(stdout," %d:%d:%f",column,i,classifier->threshold);
 			min_objective=objective;
 			for(l=0;l<num_classes;l++) // update class weight
 			{
-				classifier->c0[l]=0.5*log((weight[0][1][l]+epsilon)/(weight[0][0][l]+epsilon));
-				classifier->c1[l]=0.5*log((weight[1][1][l]+epsilon)/(weight[1][0][l]+epsilon));
-				classifier->c2[l]=0.5*log((weight[2][1][l]+epsilon)/(weight[2][0][l]+epsilon));
+				classifier->c0[l]=0.5*LOG((weight[0][1][l]+epsilon)/(weight[0][0][l]+epsilon));
+				classifier->c1[l]=0.5*LOG((weight[1][1][l]+epsilon)/(weight[1][0][l]+epsilon));
+				classifier->c2[l]=0.5*LOG((weight[2][1][l]+epsilon)/(weight[2][0][l]+epsilon));
 			}
 		}
 	}
@@ -333,21 +357,29 @@ typedef struct workertoolbox {
 	double **sum_of_weights;
 	SHARED_NOINIT(int,next_column); // the next column to process
 	SHARED_NOINIT(weakclassifier_t*,best_classifier); // the result of a job
-	sem_t* ready_to_process; // if available, a thread can start working
-	sem_t* result_available; // if available, a result is avaiable in best_classifier
+	//sem_t* ready_to_process; // if available, a thread can start working
+	semaphore_t* ready_to_process;
+	//sem_t* result_available; // if available, a result is avaiable in best_classifier
+	semaphore_t* result_available;
 } workertoolbox_t;
 
 
 workertoolbox_t* toolbox=NULL;
+SHARED(int,next_worker_num,0);
 
 void* threaded_worker(void* data)
 {
 	int column;
-	int worker_num=*((int*)data);
+	LOCK(next_worker_num);
+	int worker_num=next_worker_num;
+	next_worker_num++;
+	UNLOCK(next_worker_num);
 	while(!finished)
 	{
-		sem_wait(toolbox->ready_to_process);
-		if(finished)pthread_exit(0);
+		//sem_wait(toolbox->ready_to_process);
+		//if(verbose)fprintf(stdout,"%d worker thread ready\n",worker_num);
+		semaphore_wait(toolbox->ready_to_process);
+		if(finished)pthread_exit(NULL);
 		LOCK(toolbox->next_column);
 		column=toolbox->next_column;
 		toolbox->next_column++;
@@ -388,7 +420,8 @@ void* threaded_worker(void* data)
 			FREE(current->c2);
 			FREE(current);
 		}
-		sem_post(toolbox->result_available);
+		//sem_post(toolbox->result_available);
+		semaphore_post(toolbox->result_available);
 	}
 	pthread_exit(NULL);
 }
@@ -421,19 +454,19 @@ double compute_classification_error(vector_t* classifiers, vector_t* examples, d
 					{
 						example->score[l]+=classifier->alpha*classifier->c0[l];
 						if(j==classifiers->length-1) // update example weight
-							example->weight[l]=example->weight[l]*exp(-classifier->alpha*y_l(example,l)*classifier->c0[l]);
+							example->weight[l]=example->weight[l]*EXP(-classifier->alpha*y_l(example,l)*classifier->c0[l]);
 					}
 					else if(value<classifier->threshold) // below threshold
 					{
 						example->score[l]+=classifier->alpha*classifier->c1[l];
 						if(j==classifiers->length-1) // update example weight
-							example->weight[l]=example->weight[l]*exp(-classifier->alpha*y_l(example,l)*classifier->c1[l]);
+							example->weight[l]=example->weight[l]*EXP(-classifier->alpha*y_l(example,l)*classifier->c1[l]);
 					}
 					else  // above threshold
 					{
 						example->score[l]+=classifier->alpha*classifier->c2[l];
 						if(j==classifiers->length-1) // update example weight
-							example->weight[l]=example->weight[l]*exp(-classifier->alpha*y_l(example,l)*classifier->c2[l]);
+							example->weight[l]=example->weight[l]*EXP(-classifier->alpha*y_l(example,l)*classifier->c2[l]);
 					}
 				}
 				else if(classifier->type==CLASSIFIER_TYPE_TEXT)
@@ -443,19 +476,19 @@ double compute_classification_error(vector_t* classifiers, vector_t* examples, d
 					{
 						example->score[l]+=classifier->alpha*classifier->c0[l];
 						if(j==classifiers->length-1) // update example weight
-							example->weight[l]=example->weight[l]*exp(-classifier->alpha*y_l(example,l)*classifier->c0[l]);
+							example->weight[l]=example->weight[l]*EXP(-classifier->alpha*y_l(example,l)*classifier->c0[l]);
 					}
 					else if(token!=classifier->token) // token is absent
 					{
 						example->score[l]+=classifier->alpha*classifier->c1[l];
 						if(j==classifiers->length-1)
-							example->weight[l]=example->weight[l]*exp(-classifier->alpha*y_l(example,l)*classifier->c1[l]);
+							example->weight[l]=example->weight[l]*EXP(-classifier->alpha*y_l(example,l)*classifier->c1[l]);
 					}
 					else // token is present
 					{
 						example->score[l]+=classifier->alpha*classifier->c2[l];
 						if(j==classifiers->length-1)
-							example->weight[l]=example->weight[l]*exp(-classifier->alpha*y_l(example,l)*classifier->c2[l]);
+							example->weight[l]=example->weight[l]*EXP(-classifier->alpha*y_l(example,l)*classifier->c2[l]);
 					}
 				}
 			}
@@ -693,7 +726,7 @@ void save_model(vector_t* classifiers, vector_t* classes, char* filename)
 
 void usage(char* program_name)
 {
-	fprintf(stderr,"USAGE: %s [-n <iterations>|-E <smoothing>|-V|-j <threads>|-f <cutoff>] -S <stem>\n",program_name);
+	fprintf(stdout,"USAGE: %s [-n <iterations>|-E <smoothing>|-V|-j <threads>|-f <cutoff>] -S <stem>\n",program_name);
 	exit(1);
 }
 
@@ -890,21 +923,26 @@ int main(int argc, char** argv)
 	toolbox->best_classifier->objective=1.0;
 	//toolbox->ready_to_process=MALLOC(sizeof(sem_t));
 	//sem_init(toolbox->ready_to_process,0,0);
-	sem_unlink("ready_to_process");
-	toolbox->ready_to_process=sem_open("ready_to_process",O_CREAT,0700,0);
-	if(toolbox->ready_to_process==(sem_t*)SEM_FAILED)die("ready to process %d",SEM_FAILED);
+	//sem_unlink("ready_to_process");
+	//toolbox->ready_to_process=sem_open("ready_to_process",O_CREAT,0700,0);
+	//if(toolbox->ready_to_process==(sem_t*)SEM_FAILED)die("ready to process %d",SEM_FAILED);
+	toolbox->ready_to_process=semaphore_new(0);
 	//toolbox->result_available=MALLOC(sizeof(sem_t));
 	//sem_init(toolbox->result_available,0,0);
-	sem_unlink("result_available");
-	toolbox->result_available=sem_open("result_avaiable",O_CREAT,0700,0);
-	if(toolbox->result_available==(sem_t*)SEM_FAILED)die("result_available");
+	//sem_unlink("result_available");
+	//toolbox->result_available=sem_open("result_avaiable",O_CREAT,0700,0);
+	//if(toolbox->result_available==(sem_t*)SEM_FAILED)die("result_available");
+	toolbox->result_available=semaphore_new(0);
+	semaphore_post(toolbox->result_available);
+	semaphore_wait(toolbox->result_available);
 	for(i=0; i<number_of_workers; i++)
 	{
-		pthread_attr_t attributes;
+		/*pthread_attr_t attributes;
 		pthread_attr_init(&attributes);
-		pthread_attr_setdetachstate(&attributes,PTHREAD_CREATE_JOINABLE);
-		pthread_create(&workers[i],&attributes,threaded_worker,&i);
-		pthread_attr_destroy(&attributes);
+		pthread_attr_setdetachstate(&attributes,PTHREAD_CREATE_JOINABLE);*/
+		//pthread_create(&workers[i],&attributes,threaded_worker,NULL);
+		pthread_create(&workers[i],NULL,threaded_worker,NULL);
+		//pthread_attr_destroy(&attributes);
 	}
 #endif
 	int iteration=0;
@@ -926,12 +964,14 @@ int main(int argc, char** argv)
 #ifdef USE_THREADS
 		for(i=0;i<templates->length;i++) // find the best classifier
 		{
-			sem_post(toolbox->ready_to_process);
+			//sem_post(toolbox->ready_to_process);
+			semaphore_post(toolbox->ready_to_process);
 		}
 		// need to store and reorder potential classifiers to get a deterministic behaviour
 		for(i=0;i<templates->length;i++) // wait for the results
 		{
-			sem_wait(toolbox->result_available);
+			//sem_wait(toolbox->result_available);
+			semaphore_wait(toolbox->result_available);
 		}
 		// all results should be available
 		classifier=MALLOC(sizeof(weakclassifier_t));
@@ -1078,23 +1118,27 @@ int main(int argc, char** argv)
 	}
 	vector_free(examples);
 	string_free(stem);
+	if(verbose)fprintf(stdout,"FINISHED!!!\n");
 #ifdef USE_THREADS
 	LOCK(finished);
 	finished=1;
 	UNLOCK(finished);
-	fprintf(stderr,"FINISHED!!!\n");
 	for(i=0;i<number_of_workers;i++)
 	{
 		int j;
 		for(j=0;j<number_of_workers;j++)
-			sem_post(toolbox->ready_to_process); // need more, because you cannot unlock all at a time
+			semaphore_post(toolbox->ready_to_process);
+			//sem_post(toolbox->ready_to_process); // need more, because you cannot unlock all at a time
 		void* output;
 		pthread_join(workers[i],&output);
+		if(verbose)fprintf(stdout,"worker joined with return value: %p\n",output);
 	}
-	sem_unlink("ready_to_process");
+	/*sem_unlink("ready_to_process");
 	sem_close(toolbox->ready_to_process);
 	sem_unlink("results_available");
-	sem_close(toolbox->result_available);
+	sem_close(toolbox->result_available);*/
+	semaphore_free(toolbox->ready_to_process);
+	semaphore_free(toolbox->result_available);
 	FREE(toolbox->best_classifier->c0);
 	FREE(toolbox->best_classifier->c1);
 	FREE(toolbox->best_classifier->c2);

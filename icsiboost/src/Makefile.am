@@ -20,8 +20,8 @@
 # should move to -Werror (all warnings are errors)
 INCLUDES=-Wall -Werror-implicit-function-declaration
 
-utils = utils/vector.c utils/string.c utils/hashtable.c utils/array.c utils/mapped.c
-utils += utils/vector.h utils/string.h utils/hashtable.h utils/array.h utils/mapped.h utils/utils.h
+utils = utils/vector.c utils/string.c utils/hashtable.c utils/array.c utils/mapped.c utils/threads.c
+utils += utils/vector.h utils/string.h utils/hashtable.h utils/array.h utils/mapped.h utils/threads.h utils/common.h
 
 bin_PROGRAMS = icsiboost
 check_PROGRAMS = utils_test
