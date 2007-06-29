@@ -61,6 +61,10 @@ TODO:
 - frequency cutoff
 - sampleing and ranking
 - more COMMENTS !!!
+NOTES:
+- text features are treated as bag-of-ngrams
+- shyp file: boostexter saves non-text discrete features as their id
+- shyp file: when combining the same classifiers, boostexter adds the alphas and averages the C_js
 */
 #define FEATURE_TYPE_IGNORE 0
 #define FEATURE_TYPE_CONTINUOUS 1
@@ -74,7 +78,6 @@ typedef struct template { // a column definition
 	int type;
 	hashtable_t* dictionary;       // dictionary for token based template
 	vector_t* tokens;              // the actual tokens
-	//vector_t* dictionary_counts;
 	vector_t* ordered;             // ordered example ids according to value for continuous columns
 } template_t;
 
@@ -168,7 +171,7 @@ weakclassifier_t* train_text_stump(double min_objective, template_t* template, v
 			objective+=sqrt(weight[1][l][t]*weight[0][l][t]);
 		}
 		objective*=2;
-		fprintf(stdout,"DEBUG: column=%d token=%d obj=%f\n",column,t,objective);
+		//fprintf(stdout,"DEBUG: column=%d token=%d obj=%f\n",column,t,objective);
 		if(objective-min_objective<-1e-11) // select the argmin()
 		{
 			min_objective=objective;
@@ -211,7 +214,7 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 		ordered->length=examples->length;
 		int32_t index=0;
 		for(index=0;index<examples->length;index++)vector_set_int32(ordered,index,(int32_t)index);
-		for(i=0;i<examples->length && i<4;i++)fprintf(stdout,"%d %f\n",i,vector_get_float(((example_t*)vector_get(examples,i))->features,column));
+		//for(i=0;i<examples->length && i<4;i++)fprintf(stdout,"%d %f\n",i,vector_get_float(((example_t*)vector_get(examples,i))->features,column));
 		ordered->length=examples->length;
 		int local_comparator(const void* a, const void* b)
 		{
@@ -220,10 +223,10 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 			float aa_value=vector_get_float(((example_t*)vector_get(examples,(size_t)aa))->features,column);
 			float bb_value=vector_get_float(((example_t*)vector_get(examples,(size_t)bb))->features,column);
 			//fprintf(stdout,"%d(%f) <=> %d(%f)\n",aa,aa_value,bb,bb_value);
-			if(aa_value<bb_value)return -1;
-			if(aa_value>bb_value)return -1;
-			//if(isnan(aa_value) || aa_value>bb_value)return 1; // put the NAN (unknown values) at the end of the list
-			//if(isnan(bb_value) || aa_value<bb_value)return -1;
+			//if(aa_value<bb_value)return -1;
+			//if(aa_value>bb_value)return 1;
+			if(isnan(aa_value) || aa_value>bb_value)return 1; // put the NAN (unknown values) at the end of the list
+			if(isnan(bb_value) || aa_value<bb_value)return -1;
 			return 0;
 		}
 		vector_sort(ordered,local_comparator);
@@ -266,7 +269,7 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 	for(i=0;i<ordered->length-1;i++) // compute the objective function at every possible threshold (in between examples)
 	{
 		example_t* example=(example_t*)vector_get(examples,(size_t)vector_get_int32(ordered,i));
-		fprintf(stdout,"%zd %zd %f\n",i,vector_get_int32(ordered,i),vector_get_float(example->features,column));
+		//fprintf(stdout,"%zd %zd %f\n",i,vector_get_int32(ordered,i),vector_get_float(example->features,column));
 		if(isnan(vector_get_float(example->features,column)))continue; // skip unknown values
 		example_t* next_example=(example_t*)vector_get(examples,(size_t)vector_get_int32(ordered,i+1));
 		for(l=0;l<num_classes;l++) // update the objective function by putting the current example the other side of the threshold
@@ -289,12 +292,12 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 			objective+=sqrt(weight[2][1][l]*weight[2][0][l]);
 		}
 		objective*=2;
-		fprintf(stdout,"DEBUG: column=%d threshold=%f obj=%f\n",column,(vector_get_float(next_example->features,column)+vector_get_float(example->features,column))/2,objective);
+		//fprintf(stdout,"DEBUG: column=%d threshold=%f obj=%f\n",column,(vector_get_float(next_example->features,column)+vector_get_float(example->features,column))/2,objective);
 		if(objective-min_objective<-1e-11) // get argmin
 		{
 			classifier->objective=objective;
 			classifier->threshold=(vector_get_float(next_example->features,column)+vector_get_float(example->features,column))/2; // threshold between current and next example
-			if(isnan(classifier->threshold))die("threshold is nan, column=%d, objective=%f, i=%d",column,objective,i); // should not happend
+			if(isnan(classifier->threshold))die("threshold is nan, column=%d, objective=%f, i=%zd",column,objective,i); // should not happend
 			//fprintf(stdout," %d:%d:%f",column,i,classifier->threshold);
 			min_objective=objective;
 			for(l=0;l<num_classes;l++) // update class weight
@@ -655,6 +658,39 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 	return examples;
 }
 
+void save_model(vector_t* classifiers, vector_t* classes, char* filename)
+{
+	FILE* output=fopen(filename,"w");
+	if(output==NULL)die("could not output model in \"%s\"",filename);
+	int i;
+	fprintf(output,"%zd\n\n",classifiers->length);
+	for(i=0; i<classifiers->length; i++)
+	{
+		weakclassifier_t* classifier=(weakclassifier_t*)vector_get(classifiers,i);
+		fprintf(output,"   %.12f Text:",classifier->alpha);
+		if(classifier->type==CLASSIFIER_TYPE_THRESHOLD)
+		{
+			fprintf(output,"THRESHOLD:%s:\n\n",classifier->template->name->data);
+			int l=0;
+			for(l=0;l<classes->length;l++) fprintf(output,"%.12f ",classifier->c0[l]); fprintf(output,"\n\n");
+			for(l=0;l<classes->length;l++) fprintf(output,"%.12f ",classifier->c1[l]); fprintf(output,"\n\n");
+			for(l=0;l<classes->length;l++) fprintf(output,"%.12f ",classifier->c2[l]); fprintf(output,"\n\n");
+			fprintf(output,"%.12f\n\n\n",classifier->threshold);
+		}
+		else if(classifier->type==CLASSIFIER_TYPE_TEXT)
+		{
+			tokeninfo_t* tokeninfo=(tokeninfo_t*) vector_get(classifier->template->tokens,classifier->token);
+			fprintf(output,"SGRAM:%s:%s\n\n",classifier->template->name->data,tokeninfo->key);
+			int l=0;
+			for(l=0;l<classes->length;l++) fprintf(output,"%.12f ",classifier->c1[l]); fprintf(output,"\n\n");
+			for(l=0;l<classes->length;l++) fprintf(output,"%.12f ",classifier->c2[l]); fprintf(output,"\n\n");
+			fprintf(output,"\n");
+		}
+		else die("unknown classifier type \"%d\"",classifier->type);
+	}
+	fclose(output);
+}
+
 void usage(char* program_name)
 {
 	fprintf(stderr,"USAGE: %s [-n <iterations>|-E <smoothing>|-V|-j <threads>|-f <cutoff>] -S <stem>\n",program_name);
@@ -974,6 +1010,7 @@ int main(int argc, char** argv)
 		// unlike boostexter, C0 is always unk, C1 below or absent, C2 above or present
 	}
 
+	save_model(classifiers,classes,"model.txt");
 	// release data structures (this is why we need a garbage collector ;)
 	FREE(sum_of_weights[0]);
 	FREE(sum_of_weights[1]);
