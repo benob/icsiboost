@@ -378,7 +378,7 @@ void* threaded_worker(void* data)
 	{
 		//sem_wait(toolbox->ready_to_process);
 		//if(verbose)fprintf(stdout,"%d worker thread ready\n",worker_num);
-		semaphore_wait(toolbox->ready_to_process);
+		semaphore_eat(toolbox->ready_to_process);
 		if(finished)pthread_exit(NULL);
 		LOCK(toolbox->next_column);
 		column=toolbox->next_column;
@@ -421,7 +421,7 @@ void* threaded_worker(void* data)
 			FREE(current);
 		}
 		//sem_post(toolbox->result_available);
-		semaphore_post(toolbox->result_available);
+		semaphore_feed(toolbox->result_available);
 	}
 	pthread_exit(NULL);
 }
@@ -933,8 +933,8 @@ int main(int argc, char** argv)
 	//toolbox->result_available=sem_open("result_avaiable",O_CREAT,0700,0);
 	//if(toolbox->result_available==(sem_t*)SEM_FAILED)die("result_available");
 	toolbox->result_available=semaphore_new(0);
-	semaphore_post(toolbox->result_available);
-	semaphore_wait(toolbox->result_available);
+	semaphore_feed(toolbox->result_available);
+	semaphore_eat(toolbox->result_available);
 	for(i=0; i<number_of_workers; i++)
 	{
 		/*pthread_attr_t attributes;
@@ -965,13 +965,13 @@ int main(int argc, char** argv)
 		for(i=0;i<templates->length;i++) // find the best classifier
 		{
 			//sem_post(toolbox->ready_to_process);
-			semaphore_post(toolbox->ready_to_process);
+			semaphore_feed(toolbox->ready_to_process);
 		}
 		// need to store and reorder potential classifiers to get a deterministic behaviour
 		for(i=0;i<templates->length;i++) // wait for the results
 		{
 			//sem_wait(toolbox->result_available);
-			semaphore_wait(toolbox->result_available);
+			semaphore_eat(toolbox->result_available);
 		}
 		// all results should be available
 		classifier=MALLOC(sizeof(weakclassifier_t));
@@ -1127,7 +1127,7 @@ int main(int argc, char** argv)
 	{
 		int j;
 		for(j=0;j<number_of_workers;j++)
-			semaphore_post(toolbox->ready_to_process);
+			semaphore_feed(toolbox->ready_to_process);
 			//sem_post(toolbox->ready_to_process); // need more, because you cannot unlock all at a time
 		void* output;
 		pthread_join(workers[i],&output);

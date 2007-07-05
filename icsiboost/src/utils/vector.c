@@ -228,37 +228,55 @@ vector_t* vector_subpart(vector_t* v, size_t from, size_t to)
 
 void* vector_get(vector_t* v, size_t index)
 {
+#ifdef DEBUG
 	if(index>=v->length) warn("vector_get(%zd), out-of-bounds, index>=%zd", index, v->length);
+	if(sizeof(void*)!=v->element_size) warn("vector_get(%zd), element size=%zd does not match sizeof(void*)=%zd", index, v->element_size, sizeof(void*));
+#endif
 	return v->data.as_void[index];
 }
 
 float vector_get_float(vector_t* v, size_t index)
 {
+#ifdef DEBUG
 	if(index>=v->length) warn("vector_get_float(%zd), out-of-bounds, index>=%zd", index, v->length);
+	if(sizeof(float)!=v->element_size) warn("vector_get_float(%zd), element size=%zd does not match sizeof(float)=%zd", index, v->element_size, sizeof(float));
+#endif
 	return v->data.as_float[index];
 }
 
 int32_t vector_get_int32(vector_t* v, size_t index)
 {
+#ifdef DEBUG
 	if(index>=v->length) warn("vector_get_int32(%zd), out-of-bounds, index>=%zd", index, v->length);
+	if(sizeof(int32_t)!=v->element_size) warn("vector_get_int32(%zd), element size=%zd does not match sizeof(int32_t)=%zd", index, v->element_size, sizeof(int32_t));
+#endif
 	return v->data.as_int32[index];
 }
 
 void vector_set(vector_t* v, size_t index, void* value)
 {
+#ifdef DEBUG
 	if(index>=v->length) warn("vector_set(%zd, %p), out-of-bounds, index>=%zd", index, value, v->length);
+	if(sizeof(void*)!=v->element_size) warn("vector_set(%zd), element size=%zd does not match sizeof(void*)=%zd", index, v->element_size, sizeof(void*));
+#endif
 	v->data.as_void[index]=value;
 }
 
 void vector_set_int32(vector_t* v, size_t index, int32_t value)
 {
+#ifdef DEBUG
 	if(index>=v->length) warn("vector_set_int32(%zd, %d), out-of-bounds, index>=%zd", index, value, v->length);
+	if(sizeof(int32_t)!=v->element_size) warn("vector_set_int32(%zd), element size=%zd does not match sizeof(int32_t)=%zd", index, v->element_size, sizeof(int32_t));
+#endif
 	v->data.as_int32[index]=value;
 }
 
 void vector_set_float(vector_t* v, size_t index, float value)
 {
+#ifdef DEBUG
 	if(index>=v->length) warn("vector_set_float(%zd, %f), out-of-bounds, index>=%zd", index, value, v->length);
+	if(sizeof(float)!=v->element_size) warn("vector_set_float(%zd), element size=%zd does not match sizeof(float)=%zd", index, v->element_size, sizeof(float));
+#endif
 	v->data.as_float[index]=value;
 }
 

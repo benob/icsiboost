@@ -30,6 +30,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #endif
 
 #define _GNU_SOURCE // to get vasprintf
+#define DEBUG
 
 #include <errno.h>
 #include <string.h>

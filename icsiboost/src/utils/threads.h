@@ -30,8 +30,8 @@ typedef struct semaphore {
 } semaphore_t;
 
 semaphore_t* semaphore_new(int value);
-void semaphore_wait(semaphore_t* semaphore);
-void semaphore_post(semaphore_t* semaphore);
+void semaphore_eat(semaphore_t* semaphore);
+void semaphore_feed(semaphore_t* semaphore);
 void semaphore_free(semaphore_t* semaphore);
 
 #endif

@@ -31,7 +31,7 @@ semaphore_t* semaphore_new(int value)
 	return output;
 }
 
-void semaphore_wait(semaphore_t* semaphore)
+void semaphore_eat(semaphore_t* semaphore)
 {
 	pthread_mutex_lock(&semaphore->count_mutex);
 	while(semaphore->count<=0)
@@ -42,7 +42,7 @@ void semaphore_wait(semaphore_t* semaphore)
 	pthread_mutex_unlock(&semaphore->count_mutex);
 }
 
-void semaphore_post(semaphore_t* semaphore)
+void semaphore_feed(semaphore_t* semaphore)
 {
 	pthread_mutex_lock(&semaphore->count_mutex);
 	if(semaphore->count==0)
