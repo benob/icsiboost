@@ -406,7 +406,7 @@ void* threaded_worker(void* data)
 		{
 			current=train_continuous_stump(1.0, template, toolbox->examples, toolbox->classes->length);
 		}
-		else if(template->type==FEATURE_TYPE_TEXT)
+		else if(template->type==FEATURE_TYPE_TEXT || template->type==FEATURE_TYPE_SET)
 		{
 			current=train_text_stump(1.0, template, toolbox->examples, toolbox->sum_of_weights, toolbox->classes->length);
 		}
@@ -625,7 +625,7 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 				}
 				vector_push_float(template->values,value);
 			}
-			else if(template->type == FEATURE_TYPE_TEXT)
+			else if(template->type == FEATURE_TYPE_TEXT || template->type==FEATURE_TYPE_SET)
 			{
 				if(strcmp(field,"?")) // if not unknwon value
 				{
@@ -743,10 +743,19 @@ void save_model(vector_t* classifiers, vector_t* classes, char* filename)
 			for(l=0;l<classes->length;l++) fprintf(output,"%.12f ",classifier->c2[l]); fprintf(output,"\n\n");
 			fprintf(output,"%.12f\n\n\n",classifier->threshold);
 		}
-		else if(classifier->type==CLASSIFIER_TYPE_TEXT)
+		else if(classifier->type==CLASSIFIER_TYPE_TEXT && classifier->template->type==FEATURE_TYPE_TEXT)
 		{
 			tokeninfo_t* tokeninfo=(tokeninfo_t*) vector_get(classifier->template->tokens,classifier->token);
 			fprintf(output,"SGRAM:%s:%s\n\n",classifier->template->name->data,tokeninfo->key);
+			int l=0;
+			for(l=0;l<classes->length;l++) fprintf(output,"%.12f ",classifier->c1[l]); fprintf(output,"\n\n");
+			for(l=0;l<classes->length;l++) fprintf(output,"%.12f ",classifier->c2[l]); fprintf(output,"\n\n");
+			fprintf(output,"\n");
+		}
+		else if(classifier->type==CLASSIFIER_TYPE_TEXT && classifier->template->type==FEATURE_TYPE_SET)
+		{
+			tokeninfo_t* tokeninfo=(tokeninfo_t*) vector_get(classifier->template->tokens,classifier->token);
+			fprintf(output,"SGRAM:%s:%d\n\n",classifier->template->name->data,tokeninfo->id-1); // 0 is unknown (?), so skip it
 			int l=0;
 			for(l=0;l<classes->length;l++) fprintf(output,"%.12f ",classifier->c1[l]); fprintf(output,"\n\n");
 			for(l=0;l<classes->length;l++) fprintf(output,"%.12f ",classifier->c2[l]); fprintf(output,"\n\n");
@@ -875,7 +884,23 @@ int main(int argc, char** argv)
 			else if(!strcmp(type->data, "text")) template->type = FEATURE_TYPE_TEXT;
 			else if(!strcmp(type->data, "scored text")) template->type = FEATURE_TYPE_IGNORE;
 			else if(!strcmp(type->data, "ignore")) template->type = FEATURE_TYPE_IGNORE;
-			else template->type = FEATURE_TYPE_TEXT;
+			else template->type = FEATURE_TYPE_SET;
+			if(template->type == FEATURE_TYPE_SET)
+			{
+				array_t* values = string_split("(^ +| *, *| *\\.$)", type);
+				for(i=0; i<values->length; i++)
+				{
+					string_t* value=(string_t*)array_get(values,i);
+					tokeninfo_t* tokeninfo=(tokeninfo_t*)MALLOC(sizeof(tokeninfo_t));
+            		tokeninfo->id=i+1; // skip unknown value (?)
+		            tokeninfo->key=strdup(value->data);
+        		    tokeninfo->count=0;
+					tokeninfo->examples=vector_new_type(16,sizeof(int32_t));
+					hashtable_set(template->dictionary, value->data, value->length, tokeninfo);
+					vector_push(template->tokens,tokeninfo);
+				}
+				string_array_free(values);
+			}
 			vector_push(templates, template);
 			string_free(type);
 			array_free(parts);
@@ -1039,7 +1064,7 @@ int main(int argc, char** argv)
 			{
 				current=train_continuous_stump(min_objective, template, examples, classes->length);
 			}
-			else if(template->type==FEATURE_TYPE_TEXT)
+			else if(template->type==FEATURE_TYPE_TEXT || template->type==FEATURE_TYPE_SET)
 			{
 				current=train_text_stump(min_objective, template, examples, sum_of_weights, classes->length);
 			}
@@ -1098,7 +1123,11 @@ int main(int argc, char** argv)
 		// unlike boostexter, C0 is always unk, C1 below or absent, C2 above or present
 	}
 
-	save_model(classifiers,classes,"model.txt");
+	string_t* model_name = string_copy(stem);
+	string_append_cstr(model_name, ".shyp");
+	save_model(classifiers,classes,model_name->data);
+	string_free(model_name);
+
 	// release data structures (this is why we need a garbage collector ;)
 	FREE(sum_of_weights[0]);
 	FREE(sum_of_weights[1]);
