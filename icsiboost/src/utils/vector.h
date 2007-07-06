@@ -40,6 +40,8 @@ void _vector_resize(vector_t* v,size_t newSize);
 void vector_optimize(vector_t* v);
 void vector_free(vector_t* v);
 void vector_push(vector_t* v,void* data);
+void vector_push_int32(vector_t* v,int32_t data);
+void vector_push_float(vector_t* v,float data);
 void* vector_pop(vector_t* v);
 void* vector_remove_element(vector_t* v, size_t index);
 void* vector_shift(vector_t* v);

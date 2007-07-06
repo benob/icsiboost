@@ -55,6 +55,26 @@ void vector_free(vector_t* v)
 	FREE(v);
 }
 
+void vector_push_int32(vector_t* v, int32_t data)
+{
+	if(v->length>=v->size)
+	{
+		_vector_resize(v,v->size+v->size/2+1);
+	}
+	v->data.as_int32[v->length]=data;
+	v->length++;
+}
+
+void vector_push_float(vector_t* v, float data)
+{
+	if(v->length>=v->size)
+	{
+		_vector_resize(v,v->size+v->size/2+1);
+	}
+	v->data.as_float[v->length]=data;
+	v->length++;
+}
+
 void vector_push(vector_t* v,void* data)
 {
 	if(v->length>=v->size)

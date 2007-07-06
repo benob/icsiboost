@@ -41,6 +41,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <time.h>
 
 /*int num_EXP=0;
 double EXP(double number)
@@ -67,14 +68,18 @@ double LOG(double number)
 }*/
 
 #define EXP(a) exp(a)
-#define SQRT(a) sqrt(a)
 #define LOG(a) log(a)
 
+double SQRT(double number)
+{
+	if(number<0)return 0;
+	return sqrt(number);
+}
 /*
 WARNING:
-- the vector code is not 64bit safe. will be reworked.
+- the vector code is not 64bit safe. will be reworked. (FIXED)
 - garbage collection is not working yet => do not activate it
-- threads have a strange behaviour on osx
+- threads have a strange behaviour on osx (FIXED)
 TODO:
 - loading/saving a model
 - test mode
@@ -85,7 +90,7 @@ TODO:
 - frequency cutoff
 - sampleing and ranking
 - more COMMENTS !!!
-NOTES:
+NOTES ON THE ORIGINAL:
 - text features are treated as bag-of-ngrams
 - shyp file: boostexter saves non-text discrete features as their id
 - shyp file: when combining the same classifiers, boostexter adds the alphas and averages the C_js
@@ -101,12 +106,13 @@ typedef struct template { // a column definition
 	string_t* name;
 	int type;
 	hashtable_t* dictionary;       // dictionary for token based template
-	vector_t* tokens;              // the actual tokens
+	vector_t* tokens;              // the actual tokens (if the feature is text; contains tokeninfo)
+	vector_t* values;              // continuous values (if the feature is continuous)
 	vector_t* ordered;             // ordered example ids according to value for continuous columns
 } template_t;
 
 typedef struct example { // an instance
-	vector_t* features;            // vector of (int or float according to templates)
+	//vector_t* features;            // vector of (int or float according to templates)
 	int class;
 	double* weight;                // example weight by class
 	double* score;                 // example score by class, updated iteratively
@@ -132,10 +138,13 @@ typedef struct tokeninfo { // store info about a word (or token)
 	int32_t id;
 	char* key;
 	size_t count;
+	vector_t* examples;
 } tokeninfo_t;
 
 double smoothing=0.5;              // -E <number> in boostexter
 int verbose=0;
+
+//int *random_sequence;
 
 #define y_l(x,y) (x->class==y?1.0:-1.0)    // y_l() from the paper
 #define b(x,y) (x->class==y?1:0)           // b() from the paper (binary class match)
@@ -160,14 +169,14 @@ weakclassifier_t* train_text_stump(double min_objective, template_t* template, v
 			weight[0][l][t]=0.0;
 			weight[1][l][t]=0.0;
 		}
-	}
-	for(i=0;i<examples->length;i++) // compute the presence weights
-	{
-		example_t* example=(example_t*)vector_get(examples,i);
-		int32_t token=vector_get_int32(example->features,column);
-		for(l=0;l<num_classes;l++)
+		tokeninfo_t* tokeninfo=(tokeninfo_t*)vector_get(template->tokens, t);
+		for(i=0;i<tokeninfo->examples->length;i++) // compute the presence weights
 		{
-			weight[b(example,l)][l][token]+=example->weight[l];
+			example_t* example=(example_t*)vector_get(examples,vector_get_int32(tokeninfo->examples,i));
+			for(l=0;l<num_classes;l++)
+			{
+				weight[b(example,l)][l][t]+=example->weight[l];
+			}
 		}
 	}
 	weakclassifier_t* classifier=NULL; // init an empty classifier
@@ -189,8 +198,8 @@ weakclassifier_t* train_text_stump(double min_objective, template_t* template, v
 		double objective=0;
 		for(l=0;l<num_classes;l++) // compute the objective function Z()=sum_j(sum_l(SQRT(W+*W-))
 		{
-			if(weight[0][l][t]<0)weight[0][l][t]=0.0;
-			if(weight[1][l][t]<0)weight[1][l][t]=0.0;
+			/*if(weight[0][l][t]<0)weight[0][l][t]=0.0;
+			if(weight[1][l][t]<0)weight[1][l][t]=0.0;*/
 			objective+=SQRT((sum_of_weights[1][l]-weight[1][l][t])*(sum_of_weights[0][l]-weight[0][l][t]));
 			objective+=SQRT(weight[1][l][t]*weight[0][l][t]);
 		}
@@ -244,8 +253,10 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 		{
 			int32_t aa=*(int32_t*)a;
 			int32_t bb=*(int32_t*)b;
-			float aa_value=vector_get_float(((example_t*)vector_get(examples,(size_t)aa))->features,column);
-			float bb_value=vector_get_float(((example_t*)vector_get(examples,(size_t)bb))->features,column);
+			float aa_value=vector_get_float(template->values,(size_t)aa);
+			float bb_value=vector_get_float(template->values,(size_t)bb);
+			//float aa_value=vector_get_float(((example_t*)vector_get(examples,(size_t)aa))->features,column);
+			//float bb_value=vector_get_float(((example_t*)vector_get(examples,(size_t)bb))->features,column);
 			//fprintf(stdout,"%d(%f) <=> %d(%f)\n",aa,aa_value,bb,bb_value);
 			//if(aa_value<bb_value)return -1;
 			//if(aa_value>bb_value)return 1;
@@ -266,11 +277,12 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 		}
 	for(i=0;i<ordered->length;i++) // compute the "unknown" weights and the weight of examples after threshold
 	{
-		example_t* example=vector_get(examples,vector_get_int32(ordered,i));
+		int example_id=vector_get_int32(ordered,i);
+		example_t* example=vector_get(examples,example_id);
 		//fprintf(stdout,"%d %f\n",column,vector_get_float(example->features,column));
 		for(l=0;l<num_classes;l++)
 		{
-			if(isnan(vector_get_float(example->features,column)))
+			if(isnan(vector_get_float(template->values,example_id)))
 				weight[0][b(example,l)][l]+=example->weight[l];
 			else
 				weight[2][b(example,l)][l]+=example->weight[l];
@@ -292,25 +304,27 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 
 	for(i=0;i<ordered->length-1;i++) // compute the objective function at every possible threshold (in between examples)
 	{
-		example_t* example=(example_t*)vector_get(examples,(size_t)vector_get_int32(ordered,i));
+		int example_id=vector_get_int32(ordered,i);
+		example_t* example=(example_t*)vector_get(examples,(size_t)example_id);
 		//fprintf(stdout,"%zd %zd %f\n",i,vector_get_int32(ordered,i),vector_get_float(example->features,column));
-		if(isnan(vector_get_float(example->features,column)))continue; // skip unknown values
-		example_t* next_example=(example_t*)vector_get(examples,(size_t)vector_get_int32(ordered,i+1));
+		if(isnan(vector_get_float(template->values,example_id)))continue; // skip unknown values
+		int next_example_id=vector_get_int32(ordered,i+1);
+		//example_t* next_example=(example_t*)vector_get(examples,(size_t)next_example_id);
 		for(l=0;l<num_classes;l++) // update the objective function by putting the current example the other side of the threshold
 		{
 			weight[1][b(example,l)][l]+=example->weight[l];
 			weight[2][b(example,l)][l]-=example->weight[l];
 		}
-		if(vector_get_float(example->features,column)==vector_get_float(next_example->features,column))continue; // same value
+		if(vector_get_float(template->values,example_id)==vector_get_float(template->values,next_example_id))continue; // same value
 		double objective=0;
 		for(l=0;l<num_classes;l++) // compute objective Z()
 		{
-			if(weight[0][1][l]<0)weight[0][1][l]=0.0;
+			/*if(weight[0][1][l]<0)weight[0][1][l]=0.0;
 			if(weight[0][0][l]<0)weight[0][0][l]=0.0;
 			if(weight[1][1][l]<0)weight[1][1][l]=0.0;
 			if(weight[1][0][l]<0)weight[1][0][l]=0.0;
 			if(weight[2][1][l]<0)weight[2][1][l]=0.0;
-			if(weight[2][0][l]<0)weight[2][0][l]=0.0;
+			if(weight[2][0][l]<0)weight[2][0][l]=0.0;*/
 			objective+=SQRT(weight[0][1][l]*weight[0][0][l]);
 			objective+=SQRT(weight[1][1][l]*weight[1][0][l]);
 			objective+=SQRT(weight[2][1][l]*weight[2][0][l]);
@@ -320,7 +334,7 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 		if(objective-min_objective<-1e-11) // get argmin
 		{
 			classifier->objective=objective;
-			classifier->threshold=(vector_get_float(next_example->features,column)+vector_get_float(example->features,column))/2.0; // threshold between current and next example
+			classifier->threshold=(vector_get_float(template->values,next_example_id)+vector_get_float(template->values,example_id))/2.0; // threshold between current and next example
 			if(isnan(classifier->threshold))die("threshold is nan, column=%d, objective=%f, i=%zd",column,objective,i); // should not happend
 			//fprintf(stdout," %d:%d:%f",column,i,classifier->threshold);
 			min_objective=objective;
@@ -429,76 +443,87 @@ void* threaded_worker(void* data)
 
 /* compute error rate AND update weights
    in testing conditions (dev or test set) sum_of_weights is NULL, so just compute error rate
+   => need to be parallelized
 */
 double compute_classification_error(vector_t* classifiers, vector_t* examples, double** sum_of_weights, int num_classes)
 {
 	int i=0;
-	int j=0;
 	int l=0;
 	double error=0;
 	double normalization=0;
+	weakclassifier_t* classifier=(weakclassifier_t*)vector_get(classifiers,classifiers->length-1);
+	if(classifier->type==CLASSIFIER_TYPE_THRESHOLD)
+	{
+		for(i=0;i<examples->length;i++)
+		{
+			example_t* example=(example_t*)vector_get(examples,i);
+			float value=vector_get_float(classifier->template->values,i);
+			if(isnan(value))
+			{
+				for(l=0;l<num_classes;l++)
+				{
+					example->score[l]+=classifier->alpha*classifier->c0[l];
+					example->weight[l]=example->weight[l]*EXP(-classifier->alpha*y_l(example,l)*classifier->c0[l]);
+				}
+			}
+			else if(value<classifier->threshold)
+			{
+				for(l=0;l<num_classes;l++)
+				{
+					example->score[l]+=classifier->alpha*classifier->c1[l];
+					example->weight[l]=example->weight[l]*EXP(-classifier->alpha*y_l(example,l)*classifier->c1[l]);
+				}
+			}
+			else
+			{
+				for(l=0;l<num_classes;l++)
+				{
+					example->score[l]+=classifier->alpha*classifier->c2[l];
+					example->weight[l]=example->weight[l]*EXP(-classifier->alpha*y_l(example,l)*classifier->c2[l]);
+				}
+			}
+		}
+	}
+	else if(classifier->type==CLASSIFIER_TYPE_TEXT)
+	{
+		tokeninfo_t* tokeninfo=(tokeninfo_t*)vector_get(classifier->template->tokens,classifier->token);
+		int* seen_examples=MALLOC(sizeof(int)*examples->length);
+		memset(seen_examples,0,examples->length*sizeof(int));
+		for(i=0;i<tokeninfo->examples->length;i++)
+		{
+			int32_t example_id=vector_get_int32(tokeninfo->examples,i);
+			seen_examples[example_id]=1;
+		}
+		for(i=0;i<examples->length;i++)
+		{
+			example_t* example=(example_t*)vector_get(examples,i);
+			if(seen_examples[i])
+			{
+				for(l=0;l<num_classes;l++)
+				{
+					example->score[l]+=classifier->alpha*classifier->c2[l];
+					example->weight[l]=example->weight[l]*EXP(-classifier->alpha*y_l(example,l)*classifier->c2[l]);
+				}
+			}
+			else // unknown or absent (c1 = c0)
+			{
+				for(l=0;l<num_classes;l++)
+				{
+					example->score[l]+=classifier->alpha*classifier->c1[l];
+					example->weight[l]=example->weight[l]*EXP(-classifier->alpha*y_l(example,l)*classifier->c1[l]);
+				}
+			}
+		}
+		FREE(seen_examples);
+	}
 	for(i=0;i<examples->length;i++)
 	{
 		example_t* example=(example_t*)vector_get(examples,i);
-		for(l=0;l<num_classes;l++)
-		{
-			//example->score[l]=0;
-			//for(j=0;j<classifiers->length;j++)
-			j=classifiers->length-1; // only update score with current classifier
-			{
-				weakclassifier_t* classifier=(weakclassifier_t*)vector_get(classifiers,j);
-				if(classifier->type==CLASSIFIER_TYPE_THRESHOLD)
-				{
-					float value=vector_get_float(example->features,classifier->column);
-					if(isnan(value)) // unknown value -- need to update weight?
-					{
-						example->score[l]+=classifier->alpha*classifier->c0[l];
-						if(j==classifiers->length-1) // update example weight
-							example->weight[l]=example->weight[l]*EXP(-classifier->alpha*y_l(example,l)*classifier->c0[l]);
-					}
-					else if(value<classifier->threshold) // below threshold
-					{
-						example->score[l]+=classifier->alpha*classifier->c1[l];
-						if(j==classifiers->length-1) // update example weight
-							example->weight[l]=example->weight[l]*EXP(-classifier->alpha*y_l(example,l)*classifier->c1[l]);
-					}
-					else  // above threshold
-					{
-						example->score[l]+=classifier->alpha*classifier->c2[l];
-						if(j==classifiers->length-1) // update example weight
-							example->weight[l]=example->weight[l]*EXP(-classifier->alpha*y_l(example,l)*classifier->c2[l]);
-					}
-				}
-				else if(classifier->type==CLASSIFIER_TYPE_TEXT)
-				{
-					int32_t token=vector_get_int32(example->features,classifier->column);
-					if(token==0) // unknown value -- need to update weight?
-					{
-						example->score[l]+=classifier->alpha*classifier->c0[l];
-						if(j==classifiers->length-1) // update example weight
-							example->weight[l]=example->weight[l]*EXP(-classifier->alpha*y_l(example,l)*classifier->c0[l]);
-					}
-					else if(token!=classifier->token) // token is absent
-					{
-						example->score[l]+=classifier->alpha*classifier->c1[l];
-						if(j==classifiers->length-1)
-							example->weight[l]=example->weight[l]*EXP(-classifier->alpha*y_l(example,l)*classifier->c1[l]);
-					}
-					else // token is present
-					{
-						example->score[l]+=classifier->alpha*classifier->c2[l];
-						if(j==classifiers->length-1)
-							example->weight[l]=example->weight[l]*EXP(-classifier->alpha*y_l(example,l)*classifier->c2[l]);
-					}
-				}
-			}
-			//if(example->weight[l]<1.0/examples->length*num_classes)example->weight[l]=1.0/examples->length*num_classes;
-			normalization+=example->weight[l]; // update Z() normalization (not the same Z as in optimization)
-		}
 		double max=-1;
 		int argmax=0;
 		for(l=0;l<num_classes;l++) // selected class = class with highest score
 		{
+			normalization+=example->weight[l]; // update Z() normalization (not the same Z as in optimization)
 			if(example->score[l]>max)
 			{
 				max=example->score[l];
@@ -566,8 +591,8 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 		}
 		if(begining_of_line >= end_of_file) die("unexpected end of file, line %d in %s", line_num, filename);
 		example_t* example = MALLOC(sizeof(example_t)); // that's one new example per line
-		example->features = vector_new_type(templates->length,sizeof(int32_t)); // we will store 32bit ints and floats
-		example->features->length=templates->length;
+		//example->features = vector_new_type(templates->length,sizeof(int32_t)); // we will store 32bit ints and floats
+		//example->features->length=templates->length;
 		example->weight = NULL;
 		char* current = begining_of_line;
 		int i;
@@ -598,36 +623,43 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 					if(error_location==NULL || *error_location!='\0')
 					   die("could not convert \"%s\" to a number, line %d, char %td in %s", field, line_num, token-begining_of_line+1, filename);
 				}
-				vector_set_float(example->features,i,value); }
+				vector_push_float(template->values,value);
+			}
 			else if(template->type == FEATURE_TYPE_TEXT)
 			{
 				if(strcmp(field,"?")) // if not unknwon value
 				{
-					tokeninfo_t* tokeninfo = hashtable_get(template->dictionary, field, length);
-					if(tokeninfo == NULL)
+					char* word=NULL;
+					for(word=strtok(field, " "); word != NULL; word=strtok(NULL," "))
 					{
-						if(in_test)tokeninfo=vector_get(template->tokens,0); // default to the unknown token
-						else // update the dictionary with the new token
+						tokeninfo_t* tokeninfo = hashtable_get(template->dictionary, word, length);
+						if(tokeninfo == NULL)
 						{
-							tokeninfo = (tokeninfo_t*)MALLOC(sizeof(tokeninfo_t));
-							tokeninfo->id = template->tokens->length;
-							tokeninfo->key = strdup(field);
-							tokeninfo->count=0;
-							hashtable_set(template->dictionary, field, length, tokeninfo);
-							vector_push(template->tokens, tokeninfo);
+							if(in_test)tokeninfo=vector_get(template->tokens,0); // default to the unknown token
+							else // update the dictionary with the new token
+							{
+								tokeninfo = (tokeninfo_t*)MALLOC(sizeof(tokeninfo_t));
+								tokeninfo->id = template->tokens->length;
+								tokeninfo->key = strdup(word);
+								tokeninfo->count=0;
+								tokeninfo->examples=vector_new_type(16,sizeof(int32_t));
+								hashtable_set(template->dictionary, word, length, tokeninfo);
+								vector_push(template->tokens, tokeninfo);
+							}
 						}
+						tokeninfo->count++;
+						//vector_set_int32(example->features,i,tokeninfo->id);
+						vector_push_int32(tokeninfo->examples,(int32_t)examples->length); // inverted index
 					}
-					tokeninfo->count++;
-					vector_set_int32(example->features,i,tokeninfo->id);
 				}
 				else
 				{
-					vector_set_int32(example->features,i,0); // unknown token is 0 (aka NULL)
+					//vector_set_int32(example->features,i,0); // unknown token is 0 (aka NULL)
 				}
 			}
 			else
 			{
-				vector_set_int32(example->features,i,0); // unsupported feature type: everything is unknown
+				//vector_set_int32(example->features,i,0); // unsupported feature type: everything is unknown
 			}
 			current++;
 		}
@@ -659,19 +691,20 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 			template_t* template=(template_t*)vector_get(templates,i);
 			hashtable_optimize(template->dictionary);
 			vector_optimize(template->tokens);
+			vector_optimize(template->values);
 		}
 		/*for(i=0; i<templates->length; i++)
-		{
-			template_t* template=(template_t*)vector_get(templates,i);
-			for(j=0; j<template->dictionary_counts->length; j++)
-			{
-				if((int)vector_get(template->dictionary_counts,j)<feature_count_cutoff)
-				{
-					void* element=hashtable_remove(template->dictionary,vector_get(template->tokens,j),strlen(vector_get(template->tokens,j)));
-					if(element!=NULL)die("YOUPI %s", (char*)vector_get(template->tokens,j));
-				}
-			}
-		}*/
+		  {
+		  template_t* template=(template_t*)vector_get(templates,i);
+		  for(j=0; j<template->dictionary_counts->length; j++)
+		  {
+		  if((int)vector_get(template->dictionary_counts,j)<feature_count_cutoff)
+		  {
+		  void* element=hashtable_remove(template->dictionary,vector_get(template->tokens,j),strlen(vector_get(template->tokens,j)));
+		  if(element!=NULL)die("YOUPI %s", (char*)vector_get(template->tokens,j));
+		  }
+		  }
+		  }*/
 	}
 	// initalize weights and score
 	for(i=0;i<examples->length;i++)
@@ -829,12 +862,14 @@ int main(int argc, char** argv)
 			string_t* type = (string_t*)array_get(parts, 1);
 			template->dictionary = hashtable_new(16384);
 			template->tokens = vector_new(16);
+			template->values = vector_new_type(16,sizeof(float));
 			//template->dictionary_counts = vector_new(16);
 			template->ordered=NULL;
 			tokeninfo_t* unknown_token=(tokeninfo_t*)MALLOC(sizeof(tokeninfo_t));
 			unknown_token->id=0;
 			unknown_token->key=strdup("?");
 			unknown_token->count=0;
+			unknown_token->examples=NULL;
 			vector_push(template->tokens,unknown_token);
 			if(!strcmp(type->data, "continuous")) template->type = FEATURE_TYPE_CONTINUOUS;
 			else if(!strcmp(type->data, "text")) template->type = FEATURE_TYPE_TEXT;
@@ -871,10 +906,23 @@ int main(int argc, char** argv)
 	vector_t* examples = load_examples(data_filename->data, templates, classes, feature_count_cutoff, 0);
 	string_free(data_filename);
 
+	// generate a simple random sequence of example ids for sampleing
+	/*random_sequence=(int*)MALLOC(sizeof(int)*examples->length);
+	srand(time(NULL));
+	for(i=0;i<examples->length;i++)
+	{
+		int index=rand()%examples->length;
+		int tmp=random_sequence[i];
+		random_sequence[i]=random_sequence[index];
+		random_sequence[index]=tmp;
+	}*/
+
 	vector_t* dev_examples=NULL;
 	vector_t* test_examples=NULL;
 
-	data_filename = string_copy(stem);
+// deactivated dev/test that don't work with the new indexed features (need separate handleing)
+
+	/*data_filename = string_copy(stem);
 	string_append_cstr(data_filename, ".dev");
 	dev_examples = load_examples(data_filename->data, templates, classes, 0, 1);
 	string_free(data_filename);
@@ -882,7 +930,7 @@ int main(int argc, char** argv)
 	data_filename = string_copy(stem);
 	string_append_cstr(data_filename, ".test");
 	test_examples = load_examples(data_filename->data, templates, classes, 0, 1);
-	string_free(data_filename);
+	string_free(data_filename);*/
 
 	// initialize the sum of weights by classes (to infer the other side of the partition in binary classifiers)
 	// sum_of_weights[b][l]
@@ -1076,10 +1124,12 @@ int main(int argc, char** argv)
 		for(j=0; j<template->tokens->length; j++)
 		{
 			tokeninfo_t* tokeninfo = (tokeninfo_t*) vector_get(template->tokens, j);
+			if(tokeninfo->examples!=NULL)vector_free(tokeninfo->examples);
 			FREE(tokeninfo->key);
 			FREE(tokeninfo);
 		}
 		vector_free(template->tokens);
+		vector_free(template->values);
 		if(template->ordered!=NULL)vector_free(template->ordered);
 		FREE(template);
 	}
@@ -1089,7 +1139,7 @@ int main(int argc, char** argv)
 		for(i=0; i<dev_examples->length; i++)
 		{
 			example_t* example=(example_t*)vector_get(dev_examples,i);
-			vector_free(example->features);
+			//vector_free(example->features);
 			FREE(example->weight);
 			FREE(example->score);
 			FREE(example);
@@ -1101,7 +1151,7 @@ int main(int argc, char** argv)
 		for(i=0; i<test_examples->length; i++)
 		{
 			example_t* example=(example_t*)vector_get(test_examples,i);
-			vector_free(example->features);
+			//vector_free(example->features);
 			FREE(example->weight);
 			FREE(example->score);
 			FREE(example);
@@ -1111,7 +1161,7 @@ int main(int argc, char** argv)
 	for(i=0; i<examples->length; i++)
 	{
 		example_t* example=(example_t*)vector_get(examples,i);
-		vector_free(example->features);
+		//vector_free(example->features);
 		FREE(example->weight);
 		FREE(example->score);
 		FREE(example);
