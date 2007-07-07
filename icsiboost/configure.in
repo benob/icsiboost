@@ -50,6 +50,9 @@ AC_FUNC_MMAP
 AC_FUNC_STRTOD
 AC_CHECK_FUNCS([memmove memset munmap regcomp sqrt strdup strtol])
 
+# generate version information
+svn info|awk 'BEGIN{print "#ifndef _VERSION_H_\n#define _VERSION_H_\n#define SVN_INFO \\"}{print "\"  " $0 "\\n\" \\"}END{print "\"\"\n#endif"}' > src/version.h
+
 AC_CONFIG_FILES([Makefile
                  src/Makefile])
 AC_OUTPUT

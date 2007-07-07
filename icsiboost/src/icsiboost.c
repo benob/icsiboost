@@ -27,6 +27,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #include "utils/hashtable.h"
 #include "utils/mapped.h"
 #include "utils/array.h"
+#include "version.h"
 
 #ifdef USE_THREADS
 #include "utils/threads.h"
@@ -75,6 +76,7 @@ double SQRT(double number)
 	if(number<0)return 0;
 	return sqrt(number);
 }
+
 /*
 WARNING:
 - the vector code is not 64bit safe. will be reworked. (FIXED)
@@ -598,8 +600,9 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 		int i;
 		for(i = 0; i < templates->length; i++) // get one feature per column
 		{
+			template_t* template = (template_t*)vector_get(templates,i);
 			while(current < end_of_file && *current == ' ') current++; // strip spaces at begining
-			if(current >= end_of_file) die("unexpected end of file, line %d in %s", line_num, filename);
+			if(current >= end_of_file) die("unexpected end of file, line %d, column %d (%s) in %s", line_num, i, template->name->data, filename);
 			char* token = current;
 			size_t length = 0;
 			while(current < end_of_file && *current != ',') // get up to coma
@@ -607,12 +610,11 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 				current++;
 				length++;
 			}
-			if(current >= end_of_file) die("unexpected end of file, line %d in %s", line_num, filename);
+			if(current >= end_of_file) die("unexpected end of file, line %d, column %d (%s) in %s", line_num, i, template->name->data, filename);
 			while(*(token+length-1) == ' ' && length > 0) length--; // strip spaces as end
 			char field[length+1];
 			memcpy(field, token, length);
 			field[length] = '\0';
-			template_t* template = (template_t*)vector_get(templates,i);
 			if(template->type == FEATURE_TYPE_CONTINUOUS)
 			{
 				float value=NAN;// unknwon is represented by Not-A-Number (NAN)
@@ -621,7 +623,7 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 				{
 					value = strtof(field, &error_location);
 					if(error_location==NULL || *error_location!='\0')
-					   die("could not convert \"%s\" to a number, line %d, char %td in %s", field, line_num, token-begining_of_line+1, filename);
+					   die("could not convert \"%s\" to a number, line %d, char %td, column %d (%s) in %s", field, line_num, token-begining_of_line+1, i, template->name->data, filename);
 				}
 				vector_push_float(template->values,value);
 			}
@@ -636,7 +638,7 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 						if(tokeninfo == NULL)
 						{
 							if(in_test)tokeninfo=vector_get(template->tokens,0); // default to the unknown token
-							else // update the dictionary with the new token
+							else if(template->type == FEATURE_TYPE_TEXT) // update the dictionary with the new token
 							{
 								tokeninfo = (tokeninfo_t*)MALLOC(sizeof(tokeninfo_t));
 								tokeninfo->id = template->tokens->length;
@@ -646,6 +648,7 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 								hashtable_set(template->dictionary, word, length, tokeninfo);
 								vector_push(template->tokens, tokeninfo);
 							}
+							else die("value \"%s\" was not described in names file, line %d, column %d (%s) in %s", word, line_num, i, template->name->data, filename);
 						}
 						tokeninfo->count++;
 						//vector_set_int32(example->features,i,tokeninfo->id);
@@ -768,8 +771,20 @@ void save_model(vector_t* classifiers, vector_t* classes, char* filename)
 
 void usage(char* program_name)
 {
-	fprintf(stdout,"USAGE: %s [-n <iterations>|-E <smoothing>|-V|-j <threads>|-f <cutoff>] -S <stem>\n",program_name);
+	fprintf(stderr,"USAGE: %s [--version|-n <iterations>|-E <smoothing>|-V|-j <threads>|-f <cutoff>] -S <stem>\n",program_name);
 	exit(1);
+}
+
+void print_version(char* program_name)
+{
+	fprintf(stdout,"%s, boosting decision stumps\n", program_name);
+	fprintf(stdout,"Written by Benoit Favre.\n\n");
+	fprintf(stdout,"Copyright (C) 2007 International Computer Science Institute.\n");
+	fprintf(stdout,"This is free software; see the source for copying conditions.  There is NO\n");
+	fprintf(stdout,"warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n");
+	fprintf(stdout,"Build: %s at %s\n",__DATE__,__TIME__);
+	fprintf(stdout,"Subversion info:\n");
+	fprintf(stdout,"%s",SVN_INFO);
 }
 
 int main(int argc, char** argv)
@@ -835,6 +850,11 @@ int main(int argc, char** argv)
 			if(arg==NULL)die("value needed for -S");
 			stem=string_copy(arg);
 		}
+		else if(string_eq_cstr(arg,"--version"))
+		{
+			print_version(argv[0]);
+			exit(0);
+		}
 		else usage(argv[0]);
 		string_free(arg);
 	}
@@ -888,6 +908,7 @@ int main(int argc, char** argv)
 			if(template->type == FEATURE_TYPE_SET)
 			{
 				array_t* values = string_split("(^ +| *, *| *\\.$)", type);
+				if(values->length <= 1)die("invalid column definition \"%s\", line %d in %s", line->data, line_num+1, names_filename->data);
 				for(i=0; i<values->length; i++)
 				{
 					string_t* value=(string_t*)array_get(values,i);
@@ -909,6 +930,7 @@ int main(int argc, char** argv)
 		else // first line contains the class definitions
 		{
 			array_t* parts = string_split("(^ +| *, *| *\\.$)", line);
+			if(parts->length <= 1)die("invalid classes definition \"%s\", line %d in %s", line->data, line_num+1, names_filename->data);
 			classes = vector_from_array(parts);
 			array_free(parts);
 			if(verbose)
