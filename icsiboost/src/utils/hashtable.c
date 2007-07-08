@@ -239,7 +239,7 @@ off_t hashtable_get_from_mapped(mapped_t* mapped,void* key,int key_length)
 
 void _hashtable_freeelement(void* data, void* metadata)
 {
-	hashelement_t* element=(hashelement_t*)data;
+	hashelement_t* element=*(hashelement_t**)data;
 	FREE(element->key);
 	FREE(element);
 }

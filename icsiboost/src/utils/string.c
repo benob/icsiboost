@@ -158,8 +158,8 @@ string_t* string_reverse(string_t* input)
 string_t* string_chomp(string_t* input)
 {
 	size_t i=input->length;
-	while(i>0 && (input->data[i]=='\n' || input->data[i]=='\r'))i--;
-	if(i>0 && i<input->length)input->data[i+1]='\0';
+	while(i>0 && (input->data[i-1]=='\n' || input->data[i-1]=='\r'))i--;
+	if(i>0 && i<input->length)input->data[i]='\0';
 	input->length=i;
 	return input;
 }
@@ -430,3 +430,17 @@ int string_not_equal_cstr(string_t* a, const char* b)
 	return strcmp(a->data, b)!=0;
 }
 
+string_t* string_readline(FILE* file)
+{
+	string_t* output=NULL;
+	char buffer[1024];
+	do
+	{
+		char* result=fgets(buffer,1024,file);
+		if(result==NULL)return output;
+		if(output==NULL) output=string_new(buffer);
+		else string_append_cstr(output,buffer);
+	}
+	while(strlen(buffer)==1023 && buffer[1022]!='\n');
+	return output;
+}

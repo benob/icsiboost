@@ -44,6 +44,10 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #include <math.h>
 #include <time.h>
 
+// declare vectors that are interesting for us
+vector_implement_functions_for_type(float, 0.0);
+vector_implement_functions_for_type(int32_t, 0);
+
 /*int num_EXP=0;
 double EXP(double number)
 {
@@ -174,7 +178,7 @@ weakclassifier_t* train_text_stump(double min_objective, template_t* template, v
 		tokeninfo_t* tokeninfo=(tokeninfo_t*)vector_get(template->tokens, t);
 		for(i=0;i<tokeninfo->examples->length;i++) // compute the presence weights
 		{
-			example_t* example=(example_t*)vector_get(examples,vector_get_int32(tokeninfo->examples,i));
+			example_t* example=(example_t*)vector_get(examples,vector_get_int32_t(tokeninfo->examples,i));
 			for(l=0;l<num_classes;l++)
 			{
 				weight[b(example,l)][l][t]+=example->weight[l];
@@ -245,10 +249,10 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 	vector_t* ordered=template->ordered;
 	if(ordered==NULL) // only order examples once, then keep the result in the template
 	{
-		ordered=vector_new_type(examples->length,sizeof(int32_t));
+		ordered=vector_new_int32_t(examples->length);
 		ordered->length=examples->length;
 		int32_t index=0;
-		for(index=0;index<examples->length;index++)vector_set_int32(ordered,index,(int32_t)index);
+		for(index=0;index<examples->length;index++)vector_set_int32_t(ordered,index,(int32_t)index);
 		//for(i=0;i<examples->length && i<4;i++)fprintf(stdout,"%d %f\n",i,vector_get_float(((example_t*)vector_get(examples,i))->features,column));
 		ordered->length=examples->length;
 		int local_comparator(const void* a, const void* b)
@@ -279,7 +283,7 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 		}
 	for(i=0;i<ordered->length;i++) // compute the "unknown" weights and the weight of examples after threshold
 	{
-		int example_id=vector_get_int32(ordered,i);
+		int example_id=vector_get_int32_t(ordered,i);
 		example_t* example=vector_get(examples,example_id);
 		//fprintf(stdout,"%d %f\n",column,vector_get_float(example->features,column));
 		for(l=0;l<num_classes;l++)
@@ -306,11 +310,11 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 
 	for(i=0;i<ordered->length-1;i++) // compute the objective function at every possible threshold (in between examples)
 	{
-		int example_id=vector_get_int32(ordered,i);
+		int example_id=vector_get_int32_t(ordered,i);
 		example_t* example=(example_t*)vector_get(examples,(size_t)example_id);
-		//fprintf(stdout,"%zd %zd %f\n",i,vector_get_int32(ordered,i),vector_get_float(example->features,column));
+		//fprintf(stdout,"%zd %zd %f\n",i,vector_get_int32_t(ordered,i),vector_get_float(example->features,column));
 		if(isnan(vector_get_float(template->values,example_id)))continue; // skip unknown values
-		int next_example_id=vector_get_int32(ordered,i+1);
+		int next_example_id=vector_get_int32_t(ordered,i+1);
 		//example_t* next_example=(example_t*)vector_get(examples,(size_t)next_example_id);
 		for(l=0;l<num_classes;l++) // update the objective function by putting the current example the other side of the threshold
 		{
@@ -493,7 +497,7 @@ double compute_classification_error(vector_t* classifiers, vector_t* examples, d
 		memset(seen_examples,0,examples->length*sizeof(int));
 		for(i=0;i<tokeninfo->examples->length;i++)
 		{
-			int32_t example_id=vector_get_int32(tokeninfo->examples,i);
+			int32_t example_id=vector_get_int32_t(tokeninfo->examples,i);
 			seen_examples[example_id]=1;
 		}
 		for(i=0;i<examples->length;i++)
@@ -644,7 +648,7 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 								tokeninfo->id = template->tokens->length;
 								tokeninfo->key = strdup(word);
 								tokeninfo->count=0;
-								tokeninfo->examples=vector_new_type(16,sizeof(int32_t));
+								tokeninfo->examples=vector_new_int32_t(16);
 								hashtable_set(template->dictionary, word, length, tokeninfo);
 								vector_push(template->tokens, tokeninfo);
 							}
@@ -652,7 +656,7 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 						}
 						tokeninfo->count++;
 						//vector_set_int32(example->features,i,tokeninfo->id);
-						vector_push_int32(tokeninfo->examples,(int32_t)examples->length); // inverted index
+						vector_push_int32_t(tokeninfo->examples,(int32_t)examples->length); // inverted index
 					}
 				}
 				else
@@ -727,6 +731,156 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 	return examples;
 }
 
+vector_t* load_model(vector_t* templates, vector_t* classes, char* filename)
+{
+	int i;
+	vector_t* classifiers=vector_new(16);
+	hashtable_t* templates_by_name=hashtable_new(templates->length);
+	for(i=0; i<templates->length; i++)
+	{
+		template_t* template=(template_t*)vector_get(templates,i);
+		hashtable_set(templates_by_name, template->name->data, template->name->length, template);
+	}
+	mapped_t* input=mapped_load_readonly(filename);
+	if(input==NULL) die("can't load model \"%s\"", filename);
+	string_t* line=NULL;
+	int line_num=0;
+	int num_classifiers=-1;
+	weakclassifier_t* current=NULL;
+	while((line=mapped_readline(input))!=NULL)
+	{
+		line_num++;
+		regexstatus_t* status=string_match(line,"^ *$",0,NULL); // skip blank lines
+		if(status)
+		{
+			regexstatus_free(status);
+			string_free(line);
+			continue;
+		}
+		if(num_classifiers==-1)
+		{
+			num_classifiers=string_to_int32(line);
+		}
+		else if(current==NULL)
+		{
+			status=string_match(line," *([^ ]+) Text:(SGRAM|THRESHOLD):([^:]+):(.*)",0,NULL); // skip comments and blank lines
+			if(status)
+			{
+				current=(weakclassifier_t*)MALLOC(sizeof(weakclassifier_t));
+				string_t* template_name=vector_get(status->groups,3);
+				template_t* template=hashtable_get(templates_by_name, template_name->data, template_name->length);
+				if(template==NULL)die("invalid column template name \"%s\", line %d in %s", template_name->data, line_num, filename);
+				string_t* alpha=vector_get(status->groups,1);
+				current->alpha=string_to_double(alpha);
+				if(isnan(current->alpha))die("invalid alpha value \"%s\", line %d in %s", alpha->data, line_num, filename);
+				current->template=template;
+				current->column=template->column;
+				current->threshold=NAN;
+				current->token=0;
+				current->type=0;
+				current->c0=NULL;
+				current->c1=NULL;
+				current->c2=NULL;
+				string_t* word=vector_get(status->groups,4);
+				if(string_eq_cstr(vector_get(status->groups,2),"SGRAM"))
+				{
+					current->type=CLASSIFIER_TYPE_TEXT;
+					if(template->type==FEATURE_TYPE_SET)
+					{
+						int32_t token_num=string_to_int32(word)+1;
+						if(token_num>template->tokens->length)die("invalid token number \"%s\", line %d in %s", word->data, line_num, filename);
+						current->token=token_num;
+					}
+					else if(template->type==FEATURE_TYPE_TEXT)
+					{
+						tokeninfo_t* tokeninfo = hashtable_get(template->dictionary, word->data, word->length);
+						if(tokeninfo==NULL)
+						{
+							tokeninfo = (tokeninfo_t*)MALLOC(sizeof(tokeninfo_t));
+							tokeninfo->id = template->tokens->length;
+							tokeninfo->key = strdup(word->data);
+							tokeninfo->count=0;
+							tokeninfo->examples=NULL;
+							hashtable_set(template->dictionary, word->data, word->length, tokeninfo);
+							vector_push(template->tokens, tokeninfo);
+						}
+					}
+				}
+				else if(string_eq_cstr(vector_get(status->groups,2),"THRESHOLD"))
+				{
+					current->type=CLASSIFIER_TYPE_THRESHOLD;
+				}
+				else die("invalid classifier definition \"%s\", line %d in %s", line->data, line_num, filename);
+				regexstatus_free(status);
+			}
+			else die("invalid classifier definition \"%s\", line %d in %s", line->data, line_num, filename);
+		}
+		else if(current->c0==NULL)
+		{
+			current->c0=MALLOC(sizeof(double)*classes->length);
+			array_t* values=string_split(" ",line);
+			if(values==NULL || values->length!=classes->length)die("invalid weight distribution \"%s\", line %d in %s",line->data,line_num,filename);
+			for(i=0; i<values->length; i++)
+			{
+				string_t* value=array_get(values,i);
+				current->c0[i]=string_to_double(value);
+				if(isnan(current->c0[i]))die("invalid value in distribution \"%s\", line %d in %s", value->data, line_num, filename);
+			}
+			string_array_free(values);
+			if(current->type==CLASSIFIER_TYPE_TEXT)
+			{
+				current->c1=MALLOC(sizeof(double)*classes->length);
+				memcpy(current->c1, current->c0, sizeof(double)*classes->length);
+			}
+		}
+		else if(current->c1==NULL)
+		{
+			current->c1=MALLOC(sizeof(double)*classes->length);
+			array_t* values=string_split(" ",line);
+			if(values==NULL || values->length!=classes->length)die("invalid weight distribution \"%s\", line %d in %s",line->data,line_num,filename);
+			for(i=0; i<values->length; i++)
+			{
+				string_t* value=array_get(values,i);
+				current->c1[i]=string_to_double(value);
+				if(isnan(current->c1[i]))die("invalid value in distribution \"%s\", line %d in %s", value->data, line_num, filename);
+			}
+			string_array_free(values);
+		}
+		else if(current->c2==NULL)
+		{
+			current->c2=MALLOC(sizeof(double)*classes->length);
+			array_t* values=string_split(" ",line);
+			if(values==NULL || values->length!=classes->length)die("invalid weight distribution \"%s\", line %d in %s",line->data,line_num,filename);
+			for(i=0; i<values->length; i++)
+			{
+				string_t* value=array_get(values,i);
+				current->c2[i]=string_to_double(value);
+				if(isnan(current->c2[i]))die("invalid value in distribution \"%s\", line %d in %s", value->data, line_num, filename);
+			}
+			string_array_free(values);
+			if(current->type==CLASSIFIER_TYPE_TEXT)
+			{
+				vector_push(classifiers, current);
+				current=NULL;
+			}
+		}
+		else if(current->type==CLASSIFIER_TYPE_THRESHOLD)
+		{
+			current->threshold=string_to_double(line);
+			if(isnan(current->threshold))die("invalid threshold \"%s\", line %d in %s", line->data, line_num, filename);
+			vector_push(classifiers, current);
+			current=NULL;
+		}
+		else die("invalid classifier definition \"%s\", line %d in %s", line->data, line_num, filename);
+		string_free(line);
+	}
+	if(verbose)fprintf(stdout,"LOADED_CLASSIFIERS %zd\n",classifiers->length);
+	mapped_free(input);
+	hashtable_free(templates_by_name);
+	vector_optimize(classifiers);
+	return classifiers;
+}
+
 void save_model(vector_t* classifiers, vector_t* classes, char* filename)
 {
 	FILE* output=fopen(filename,"w");
@@ -771,7 +925,15 @@ void save_model(vector_t* classifiers, vector_t* classes, char* filename)
 
 void usage(char* program_name)
 {
-	fprintf(stderr,"USAGE: %s [--version|-n <iterations>|-E <smoothing>|-V|-j <threads>|-f <cutoff>] -S <stem>\n",program_name);
+	fprintf(stderr,"USAGE: %s [--version|-n <iterations>|-E <smoothing>|-V|-j <threads>|-f <cutoff>|-C] -S <stem>\n",program_name);
+	fprintf(stderr,"  --version               print version info\n");
+	fprintf(stderr,"  -n <iterations>         number of boosting iterations\n");
+	fprintf(stderr,"  -E <smoothing>          set smoothing value\n");
+	fprintf(stderr,"  -V                      verbose mode\n");
+	fprintf(stderr,"  -j <threads>            number of threaded weak learners\n");
+	fprintf(stderr,"  -f <cutoff>             consider as unknown (?) nominal features occuring unfrequently\n");
+	fprintf(stderr,"  -C                      classification mode -- reads examples from <stdin>\n");
+	fprintf(stderr,"  -S <stem>               defines model/data/names stem\n");
 	exit(1);
 }
 
@@ -794,6 +956,7 @@ int main(int argc, char** argv)
 #endif
 	int maximum_iterations=10;
 	int feature_count_cutoff=0;
+	int classification_mode=0;
 #ifdef USE_THREADS
 	int number_of_workers=1;
 #endif
@@ -855,6 +1018,10 @@ int main(int argc, char** argv)
 			print_version(argv[0]);
 			exit(0);
 		}
+		else if(string_eq_cstr(arg,"-C"))
+		{
+			classification_mode=1;
+		}
 		else usage(argv[0]);
 		string_free(arg);
 	}
@@ -879,7 +1046,8 @@ int main(int argc, char** argv)
 		regexstatus_t* status=string_match(line,"^(\\|| *$)",0,NULL); // skip comments and blank lines
 		if(status)
 		{
-			free(status);
+			regexstatus_free(status);
+			string_free(line);
 			continue;
 		}
 		if(classes != NULL) // this line contains a template definition
@@ -891,7 +1059,7 @@ int main(int argc, char** argv)
 			string_t* type = (string_t*)array_get(parts, 1);
 			template->dictionary = hashtable_new(16384);
 			template->tokens = vector_new(16);
-			template->values = vector_new_type(16,sizeof(float));
+			template->values = vector_new_float(16);
 			//template->dictionary_counts = vector_new(16);
 			template->ordered=NULL;
 			tokeninfo_t* unknown_token=(tokeninfo_t*)MALLOC(sizeof(tokeninfo_t));
@@ -916,7 +1084,7 @@ int main(int argc, char** argv)
             		tokeninfo->id=i+1; // skip unknown value (?)
 		            tokeninfo->key=strdup(value->data);
         		    tokeninfo->count=0;
-					tokeninfo->examples=vector_new_type(16,sizeof(int32_t));
+					tokeninfo->examples=vector_new_int32_t(16);
 					hashtable_set(template->dictionary, value->data, value->length, tokeninfo);
 					vector_push(template->tokens,tokeninfo);
 				}
@@ -946,6 +1114,72 @@ int main(int argc, char** argv)
 	vector_optimize(templates);
 	mapped_free(input);
 	string_free(names_filename);
+
+	if(classification_mode)
+	{
+		vector_t* classifiers=NULL;
+		string_t* model_name = string_copy(stem);
+		string_append_cstr(model_name, ".shyp");
+		classifiers=load_model(templates,classes,model_name->data);
+		string_free(model_name);
+
+		string_t* line=NULL;
+		while((line=string_readline(stdin))!=NULL)
+		{
+			int l;
+			string_chomp(line);
+			array_t* array_of_tokens=string_split(" *, *", line);
+			vector_t* tokens=array_to_vector(array_of_tokens);
+			double score[classes->length];
+			for(l=0; l<classes->length; l++) score[l]=0.0;
+			for(i=0; i<classifiers->length; i++)
+			{
+				weakclassifier_t* classifier=vector_get(classifiers, i);
+				string_t* token=vector_get(tokens, classifier->column);
+				if(string_cmp_cstr(token,"?")==0)
+				{
+					for(l=0; l<classes->length; l++) score[l]+=classifier->alpha*classifier->c0[l];
+				}
+				else if(classifier->type == CLASSIFIER_TYPE_THRESHOLD)
+				{
+					double value=string_to_double(token);
+					if(value < classifier->threshold)
+						for(l=0; l<classes->length; l++) score[l]+=classifier->alpha*classifier->c1[l];
+					else
+						for(l=0; l<classes->length; l++) score[l]+=classifier->alpha*classifier->c2[l];
+				}
+				else if(classifier->type == CLASSIFIER_TYPE_TEXT)
+				{
+					tokeninfo_t* value=hashtable_get(classifier->template->dictionary, token->data, token->length);
+					if(value==NULL || value->id != classifier->token)
+						for(l=0; l<classes->length; l++) score[l]+=classifier->alpha*classifier->c1[l];
+					else
+						for(l=0; l<classes->length; l++) score[l]+=classifier->alpha*classifier->c2[l];
+				}
+			}
+			int argmax=0;
+			double max=score[argmax];
+			for(l=1; l<classes->length; l++)if(max<score[l]){max=score[l]; argmax=l;}
+			string_t* class=vector_get(classes, argmax);
+			if(tokens->length > templates->length)
+			{
+				string_t* true_class=vector_get(tokens, tokens->length-1);
+				while(true_class->data[true_class->length-1]=='.')
+				{
+					true_class->data[true_class->length-1]='\0';
+					true_class->length--;
+				}
+				fprintf(stdout,"ref: %s ",true_class->data);
+			}
+			fprintf(stdout,"hyp: %s/%f",class->data,max);
+			for(l=0; l<classes->length; l++)fprintf(stdout," %f",score[l]);
+			fprintf(stdout,"\n");
+			vector_free(tokens);
+			string_array_free(array_of_tokens);
+			string_free(line);
+		}
+		exit(0);
+	}
 
 	// load a train, dev and test sets (if available)
 	string_t* data_filename = string_copy(stem);

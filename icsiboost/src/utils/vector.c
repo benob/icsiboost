@@ -21,10 +21,23 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #include <string.h>
 #include <math.h>
 
+// implementations for vector of void*
+vector_t* vector_new(size_t initialSize) { return _vector_new(initialSize,sizeof(void*)); }
+void vector_push(vector_t* v, void* value) { _vector_push(v,&value); }
+void* vector_pop(vector_t* v) { void** output=(void**) _vector_pop(v); return output==NULL?NULL:*output; }
+void* vector_remove_element(vector_t* v, size_t index) { void** output=(void**) _vector_remove_element(v, index); return output==NULL?NULL:*output; }
+void* vector_shift(vector_t* v) { void** output=(void**) _vector_shift(v); return output==NULL?NULL:*output; }
+void vector_unshift(vector_t* v, void* value) { _vector_unshift(v, &value); }
+size_t vector_search(vector_t* v, void* value) { return _vector_search(v ,&value); }
+size_t vector_search_sorted(vector_t* v, void* value, int (*comparator)(const void*,const void*)) { return _vector_search_sorted(v, &value, comparator); }
+void* vector_get(vector_t* v, size_t index) { return *(void**) _vector_get(v, index); }
+void vector_set(vector_t* v, size_t index, void* value) { _vector_set(v, index, &value); }
+void vector_insert_element(vector_t* v, int index, void* value) { _vector_insert_element(v, index, &value); }
+
 size_t vector_memory_size(vector_t* input)
 {
 	size_t size=sizeof(vector_t);
-	size+=input->size*sizeof(void*);
+	size+=input->size*input->element_size;
 	return size;
 }
 
@@ -32,15 +45,15 @@ void _vector_resize(vector_t* v,size_t newSize)
 {
 	if(newSize==v->size)return;
 	if(newSize<1)newSize=1;
-	v->data.as_void=REALLOC(v->data.as_void,v->element_size*newSize);
-	/*void* newData=MALLOC(sizeof(void*)*newSize);
-	if(v->data.as_void!=NULL)
+	v->data=REALLOC(v->data,v->element_size*newSize);
+	/*void* newData=MALLOC(v->element_size*newSize);
+	if(v->data!=NULL)
 	{
-		memcpy(newData,v->data.as_void,v->length*sizeof(void*));
-		FREE(v->data.as_void);
+		memcpy(newData,v->data,v->length*v->element_size);
+		FREE(v->data);
 	}
-	v->data.as_void=newData;*/
-	if(v->data.as_void==NULL)warn("_vector_resize(%zd), reallocating vector from %zd", newSize, v->size);
+	v->data=newData;*/
+	if(v->data==NULL)warn("_vector_resize(%zd), reallocating vector from %zd", newSize, v->size);
 	v->size=newSize;
 }
 
@@ -51,111 +64,102 @@ void vector_optimize(vector_t* v)
 
 void vector_free(vector_t* v)
 {
-	FREE(v->data.as_void);
+	FREE(v->data);
 	FREE(v);
 }
 
-void vector_push_int32(vector_t* v, int32_t data)
+void _vector_push(vector_t* v, void* data)
 {
 	if(v->length>=v->size)
 	{
 		_vector_resize(v,v->size+v->size/2+1);
 	}
-	v->data.as_int32[v->length]=data;
+	memcpy(v->data+v->length*v->element_size,data,v->element_size);
 	v->length++;
 }
 
-void vector_push_float(vector_t* v, float data)
-{
-	if(v->length>=v->size)
-	{
-		_vector_resize(v,v->size+v->size/2+1);
-	}
-	v->data.as_float[v->length]=data;
-	v->length++;
-}
-
-void vector_push(vector_t* v,void* data)
-{
-	if(v->length>=v->size)
-	{
-		_vector_resize(v,v->size+v->size/2+1);
-	}
-	v->data.as_void[v->length]=data;
-	v->length++;
-}
-
-void* vector_pop(vector_t* v)
+void* _vector_pop(vector_t* v)
 {
 	if(v->length==0)return NULL;
-	void* value=v->data.as_void[v->length-1];
+	void* value=v->data+v->element_size*(v->length-1);
 	v->length--;
-	if(v->size>2 && v->length<v->size/2)_vector_resize(v,v->length+v->length/2);
+	if(v->size>2 && v->length<v->size/2)_vector_resize(v,v->length+v->length/2); // value should still be allocated
 	return value;
 }
 
-void* vector_remove_element(vector_t* v, size_t index)
+void* _vector_remove_element(vector_t* v, size_t index)
 {
-	if(index<0 || index>=v->length)return NULL;
-	void* element=v->data.as_void[index];
-	//fprintf(stderr,"%d %d %p %p %d\n",index,v->length,&v->data.as_void[index],&v->data.as_void[index+1],sizeof(void*)*(v->length-index-1));
-	if(index!=v->length-1)memmove(&v->data.as_void[index],&v->data.as_void[index+1],sizeof(void*)*(v->length-index-1));
+#ifdef DEBUG
+	if(index>=v->length) warn("vector_remove_element(%zd), out-of-bounds, index>=%zd", index, v->length);
+#endif
+	void* element=v->data+index*v->element_size;
+	if(index!=v->length-1)
+		memmove(v->data+index*v->element_size,v->data+(index+1)*v->element_size,v->element_size*(v->length-index-1));
 	v->length--;
 	if(v->size>2 && v->length<v->size/2)_vector_resize(v,v->length+v->length/2);
 	return element;
 }
 
-void* vector_shift(vector_t* v)
+void* _vector_shift(vector_t* v)
 {
-	return vector_remove_element(v,0);
+	if(v->length==0)return NULL;
+	return _vector_remove_element(v,0);
 }
 
-void vector_unshift(vector_t* v, void* value)
+void _vector_unshift(vector_t* v, void* value)
 {
 	if(v->length>0)
 	{
-		vector_push(v,v->data.as_void[v->length-1]);
-		memmove(&v->data.as_void[1],&v->data.as_void[0],sizeof(void*)*(v->length-2));
-		v->data.as_void[0]=value;
+		_vector_push(v,v->data+v->element_size*(v->length-1));
+		memmove(v->data+v->element_size,v->data,v->element_size*(v->length-2));
+		memcpy(v->data,value,v->element_size);
 	}
 	else
 	{
-		vector_push(v,value);
+		_vector_push(v, value);
 	}
 }
 
 void vector_append(vector_t* v,vector_t* u)
 {
+#ifdef DEBUG
+	if(v->element_size!=u->element_size)warn("vector_append(%p,%p), different element size (%zd!=%zd)",v,u,v->element_size,u->element_size);
+#endif
 	if(v->length+u->length>=v->size)_vector_resize(v,((v->length+u->length)*3)/2+1);
-	memmove(&v->data.as_void[v->length],u->data.as_void,sizeof(void*)*(u->length));
+	memmove(v->data+v->element_size*v->length,u->data,v->element_size*(u->length));
 	v->length+=u->length;
 }
 
 void vector_prepend(vector_t* v,vector_t* u)
 {
+#ifdef DEBUG
+	if(v->element_size!=u->element_size)warn("vector_prepend(%p,%p), different element size (%zd!=%zd)",v,u,v->element_size,u->element_size);
+#endif
 	if(v->length+u->length>=v->size)_vector_resize(v,((v->length+u->length)*3)/2+1);
-	memmove(&v->data.as_void[u->length],v->data.as_void,sizeof(void*)*(v->length));
-	memmove(v->data.as_void,u->data.as_void,sizeof(void*)*(u->length));
+	memmove(v->data+v->element_size*(u->length),v->data,v->element_size*(v->length));
+	memmove(v->data,u->data,v->element_size*(u->length));
 	v->length+=u->length;
 }
 
-void vector_insert_element(vector_t* v, size_t index, void* value)
+void _vector_insert_element(vector_t* v, int index, void* value)
 {
-	if(index<0) vector_unshift(v, value);
-	else if(index>=v->length) vector_push(v, value);
-	else {
-		if(v->length>=v->size)
-		{
-			_vector_resize(v,v->size+v->size/2+1);
-		}
-		memmove(&v->data.as_void[index+1],&v->data.as_void[index],sizeof(void*)*(v->length-index-1));
+	if(index<0) _vector_unshift(v, value);
+	else if(index>=v->length) _vector_push(v, value);
+	else
+	{
+		if(v->length>=v->size) _vector_resize(v,v->size+v->size/2+1);
+		memmove(v->data+v->element_size*(index+1),v->data+v->element_size*index,v->element_size*(v->length-index-1));
 		v->length++;
-		v->data.as_void[index]=value;
+		memcpy(v->data+v->element_size*index,value,v->element_size);
 	}
 }
 
 void vector_insert(vector_t* v, size_t index, vector_t* peer)
 {
+#ifdef DEBUG
+	if(v->element_size!=peer->element_size)warn("vector_insert(%p,%zd,%p), different element size (%zd!=%zd)",v,index,peer,
+			v->element_size,peer->element_size);
+#endif
 	if(index<0) vector_prepend(v, peer);
 	else if(index>=v->length) vector_append(v, peer);
 	else {
@@ -163,9 +167,9 @@ void vector_insert(vector_t* v, size_t index, vector_t* peer)
 		{
 			_vector_resize(v,v->size+peer->size+v->size/2+1);
 		}
-		memmove(&v->data.as_void[index+peer->length],&v->data.as_void[index],sizeof(void*)*(v->length-index-1));
+		memmove(v->data+v->element_size*(index+peer->length),v->data+v->element_size*(index),v->element_size*(v->length-index-1));
 		v->length+=peer->length;
-		memcpy(&v->data.as_void[index],peer->data.as_void,peer->length*sizeof(void*));
+		memcpy(v->data+v->element_size*index,peer->data,peer->length*v->element_size);
 	}
 }
 
@@ -180,11 +184,12 @@ void vector_reverse(vector_t* v)
 {
 	size_t i=0;
 	size_t j=v->length-1;
+	char tmp[v->element_size];
 	for(;i<v->length/2;i++)
 	{
-		void* tmp=v->data.as_void[i];
-		v->data.as_void[i]=v->data.as_void[j];
-		v->data.as_void[j]=tmp;
+		memcpy(tmp, v->data+v->element_size*i, v->element_size);
+		memcpy(v->data+v->element_size*i, v->data+v->element_size*j, v->element_size);
+		memcpy(v->data+v->element_size*j, tmp, v->element_size);
 		j--;
 	}
 }
@@ -196,39 +201,22 @@ void vector_remove(vector_t* v, size_t from, size_t to)
 	if(to<=from)return;
 	if(to!=v->length)
 	{
-		memmove(&v->data.as_void[from],&v->data.as_void[to],sizeof(void*)*(to-from));
+		memmove(v->data+v->element_size*from,v->data+v->element_size*to,v->element_size*(to-from));
 	}
 	v->length-=to-from;
 	if(v->length<v->size/2)_vector_resize(v,v->length+v->length/2);
 }
 
-vector_t* vector_new(size_t initialSize)
+vector_t* _vector_new(size_t initialSize, size_t element_size)
 {
 	vector_t* v=MALLOC(sizeof(vector_t));
 	if(v==NULL)return NULL;
-	v->data.as_void=NULL;//MALLOC(sizeof(void*)*initialSize);
-	v->size=0;
-	v->element_size=sizeof(void*);
-	v->length=0;
-	_vector_resize(v,initialSize);
-	if(v->data.as_void==NULL)
-	{
-		FREE(v);
-		return NULL;
-	}
-	return v;
-}
-
-vector_t* vector_new_type(size_t initialSize, size_t element_size)
-{
-	vector_t* v=MALLOC(sizeof(vector_t));
-	if(v==NULL)return NULL;
-	v->data.as_void=NULL;//MALLOC(sizeof(void*)*initialSize);
+	v->data=NULL;//MALLOC(v->element_size*initialSize);
 	v->size=0;
 	v->element_size=element_size;
 	v->length=0;
 	_vector_resize(v,initialSize);
-	if(v->data.as_void==NULL)
+	if(v->data==NULL)
 	{
 		FREE(v);
 		return NULL;
@@ -241,81 +229,45 @@ vector_t* vector_subpart(vector_t* v, size_t from, size_t to)
 	if(from<0)from=0;
 	if(to>v->length)to=v->length;
 	vector_t* output=vector_new(to-from);
-	memcpy(output->data.as_void,&v->data.as_void[from],(to-from)*sizeof(void*));
+	output->element_size=v->element_size;
+	memcpy(output->data,v->data+v->element_size*from,(to-from)*v->element_size);
 	output->length=to-from;
 	return output;
 }
 
-void* vector_get(vector_t* v, size_t index)
+void* _vector_get(vector_t* v, size_t index)
 {
 #ifdef DEBUG
 	if(index>=v->length) warn("vector_get(%zd), out-of-bounds, index>=%zd", index, v->length);
-	if(sizeof(void*)!=v->element_size) warn("vector_get(%zd), element size=%zd does not match sizeof(void*)=%zd", index, v->element_size, sizeof(void*));
 #endif
-	return v->data.as_void[index];
+	return v->data+v->element_size*index;
 }
 
-float vector_get_float(vector_t* v, size_t index)
-{
-#ifdef DEBUG
-	if(index>=v->length) warn("vector_get_float(%zd), out-of-bounds, index>=%zd", index, v->length);
-	if(sizeof(float)!=v->element_size) warn("vector_get_float(%zd), element size=%zd does not match sizeof(float)=%zd", index, v->element_size, sizeof(float));
-#endif
-	return v->data.as_float[index];
-}
-
-int32_t vector_get_int32(vector_t* v, size_t index)
-{
-#ifdef DEBUG
-	if(index>=v->length) warn("vector_get_int32(%zd), out-of-bounds, index>=%zd", index, v->length);
-	if(sizeof(int32_t)!=v->element_size) warn("vector_get_int32(%zd), element size=%zd does not match sizeof(int32_t)=%zd", index, v->element_size, sizeof(int32_t));
-#endif
-	return v->data.as_int32[index];
-}
-
-void vector_set(vector_t* v, size_t index, void* value)
+void _vector_set(vector_t* v, size_t index, void* value)
 {
 #ifdef DEBUG
 	if(index>=v->length) warn("vector_set(%zd, %p), out-of-bounds, index>=%zd", index, value, v->length);
-	if(sizeof(void*)!=v->element_size) warn("vector_set(%zd), element size=%zd does not match sizeof(void*)=%zd", index, v->element_size, sizeof(void*));
 #endif
-	v->data.as_void[index]=value;
-}
-
-void vector_set_int32(vector_t* v, size_t index, int32_t value)
-{
-#ifdef DEBUG
-	if(index>=v->length) warn("vector_set_int32(%zd, %d), out-of-bounds, index>=%zd", index, value, v->length);
-	if(sizeof(int32_t)!=v->element_size) warn("vector_set_int32(%zd), element size=%zd does not match sizeof(int32_t)=%zd", index, v->element_size, sizeof(int32_t));
-#endif
-	v->data.as_int32[index]=value;
-}
-
-void vector_set_float(vector_t* v, size_t index, float value)
-{
-#ifdef DEBUG
-	if(index>=v->length) warn("vector_set_float(%zd, %f), out-of-bounds, index>=%zd", index, value, v->length);
-	if(sizeof(float)!=v->element_size) warn("vector_set_float(%zd), element size=%zd does not match sizeof(float)=%zd", index, v->element_size, sizeof(float));
-#endif
-	v->data.as_float[index]=value;
+	memcpy(v->data+v->element_size*index,value,v->element_size);
 }
 
 vector_t* vector_copy(vector_t* input)
 {
-	vector_t* output=vector_new_type(input->length,input->element_size);
-	memcpy(output->data.as_void,input->data.as_void,input->length*sizeof(void*));
+	vector_t* output=_vector_new(input->length,input->element_size);
+	memcpy(output->data,input->data,input->length*input->element_size);
 	output->length=input->length;
 	return output;
 }
 
-vector_t* vector_duplicate_content(vector_t* input, size_t value_size)
+vector_t* vector_copy_and_duplicate_pointers(vector_t* input, size_t value_size)
 {
-	vector_t* output=vector_new(input->length);
+	vector_t* output=_vector_new(input->length,input->element_size);
 	size_t i;
 	for(i=0;i<input->length;i++)
 	{
-		output->data.as_void[i]=(void*)MALLOC(value_size);
-		memcpy(output->data.as_void[i],input->data.as_void[i],value_size);
+		void* value=MALLOC(value_size);
+		memcpy(output->data+output->element_size*i, &value, sizeof(value));
+		memcpy(*(void**)(output->data+output->element_size*i), *(void**)(input->data+input->element_size*i), value_size);
 	}
 	output->length=input->length;
 	return output;
@@ -326,42 +278,42 @@ void vector_remove_duplicates(vector_t* v)
 	size_t i,j=0;
 	for(i=0;i<v->length && j<v->length;i++)
 	{
-		v->data.as_void[i]=v->data.as_void[j];
+		memcpy(v->data+v->element_size*i,v->data+v->element_size*j,v->element_size);
 		j++;
-		while(j<v->length && v->data.as_void[i]==v->data.as_void[j])j++;
+		while(j<v->length && memcmp(v->data+v->element_size*i,v->data+v->element_size*j, v->element_size)==0)j++;
 	}
 	v->length=i;
 }
 
-size_t vector_search(vector_t* v, void* value)
+size_t _vector_search(vector_t* v, void* value)
 {
 	size_t i;
 	for(i=0;i<v->length;i++)
 	{
-		if(v->data.as_void[i]==value)return i;
+		if(memcmp(v->data+v->element_size*i,value,v->element_size)==0)return i;
 	}
 	return -1;
 }
 
-size_t vector_search_sorted(vector_t* v, void* value, int (*comparator)(const void*,const void*))
+size_t _vector_search_sorted(vector_t* v, void* value, int (*comparator)(const void*,const void*))
 {
-	void** found=bsearch(&value,v->data.as_void,v->length,sizeof(void*),comparator);
-	if(found!=NULL)return found-v->data.as_void;
+	void* found=bsearch(value,v->data,v->length,v->element_size,comparator);
+	if(found!=NULL)return (found-v->data)/v->element_size;
 	return -1;
 }
 
 void vector_sort(vector_t* v,int (*comparator)(const void*,const void*))
 {
-	qsort(v->data.as_void,v->length,v->element_size,comparator);
+	qsort(v->data,v->length,v->element_size,comparator);
 }
 
 void vector_apply(vector_t* v, void (*callback)(void* data, void* metadata),void* metadata)
 {
 	size_t i;
-	for(i=0;i<v->length;i++)callback(v->data.as_void[i],metadata);
+	for(i=0;i<v->length;i++)callback(v->data+v->element_size*i,metadata);
 }
 
 void vector_freedata(void* data,void* metadata)
 {
-	FREE(data);
+	FREE(*(void**)data);
 }

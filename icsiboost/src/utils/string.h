@@ -84,4 +84,5 @@ int string_compare_cstr(string_t* a, const char* b);
 int string_equal_cstr(string_t* a, const char* b);
 #define string_ne_cstr(a,b) string_not_equal_cstr(a,b)
 int string_not_equal_cstr(string_t* a, const char* b);
+string_t* string_readline(FILE* file);
 #endif
