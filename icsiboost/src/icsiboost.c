@@ -1129,29 +1129,48 @@ int main(int argc, char** argv)
 			int l;
 			string_chomp(line);
 			array_t* array_of_tokens=string_split(" *, *", line);
+			vector_t* values=vector_new_int32_t(templates->length);
+			for(i=0; i<templates->length; i++)
+			{
+				template_t* template=vector_get(templates, i);
+				string_t* token=array_get(array_of_tokens, i);
+				if(template->type == FEATURE_TYPE_TEXT || template->type == FEATURE_TYPE_SET)
+				{
+					if(string_cmp_cstr(token,"?")==0)vector_push_int32_t(values, 0);
+					else
+					{
+						tokeninfo_t* value=hashtable_get(template->dictionary, token->data, token->length);
+						if(value!=NULL)vector_push_int32_t(values, value->id);
+						else vector_push_int32_t(values, 0);
+					}
+				}
+				else if(template->type == FEATURE_TYPE_CONTINUOUS)
+				{
+					if(string_cmp_cstr(token,"?")==0)vector_push_float(values, NAN);
+					float value=string_to_float(token);
+					vector_push_float(values, value);
+				}
+			}
 			vector_t* tokens=array_to_vector(array_of_tokens);
 			double score[classes->length];
 			for(l=0; l<classes->length; l++) score[l]=0.0;
 			for(i=0; i<classifiers->length; i++)
 			{
 				weakclassifier_t* classifier=vector_get(classifiers, i);
-				string_t* token=vector_get(tokens, classifier->column);
-				if(string_cmp_cstr(token,"?")==0)
+				if(classifier->type == CLASSIFIER_TYPE_THRESHOLD)
 				{
-					for(l=0; l<classes->length; l++) score[l]+=classifier->alpha*classifier->c0[l];
-				}
-				else if(classifier->type == CLASSIFIER_TYPE_THRESHOLD)
-				{
-					double value=string_to_double(token);
-					if(value < classifier->threshold)
+					float value=vector_get_float(values, classifier->column);
+					if(isnan(value))
+						for(l=0; l<classes->length; l++) score[l]+=classifier->alpha*classifier->c0[l];
+					else if(value < classifier->threshold)
 						for(l=0; l<classes->length; l++) score[l]+=classifier->alpha*classifier->c1[l];
 					else
 						for(l=0; l<classes->length; l++) score[l]+=classifier->alpha*classifier->c2[l];
 				}
 				else if(classifier->type == CLASSIFIER_TYPE_TEXT)
 				{
-					tokeninfo_t* value=hashtable_get(classifier->template->dictionary, token->data, token->length);
-					if(value==NULL || value->id != classifier->token)
+					int32_t value=vector_get_int32_t(values, classifier->column);
+					if(value != classifier->token)
 						for(l=0; l<classes->length; l++) score[l]+=classifier->alpha*classifier->c1[l];
 					else
 						for(l=0; l<classes->length; l++) score[l]+=classifier->alpha*classifier->c2[l];
