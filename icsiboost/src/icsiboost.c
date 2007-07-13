@@ -927,13 +927,15 @@ void usage(char* program_name)
 {
 	fprintf(stderr,"USAGE: %s [--version|-n <iterations>|-E <smoothing>|-V|-j <threads>|-f <cutoff>|-C] -S <stem>\n",program_name);
 	fprintf(stderr,"  --version               print version info\n");
+	fprintf(stderr,"  -S <stem>               defines model/data/names stem\n");
 	fprintf(stderr,"  -n <iterations>         number of boosting iterations\n");
-	fprintf(stderr,"  -E <smoothing>          set smoothing value\n");
+	fprintf(stderr,"  -E <smoothing>          set smoothing value (default=0.5)\n");
 	fprintf(stderr,"  -V                      verbose mode\n");
 	fprintf(stderr,"  -j <threads>            number of threaded weak learners\n");
-	fprintf(stderr,"  -f <cutoff>             consider as unknown (?) nominal features occuring unfrequently\n");
+	fprintf(stderr,"  -f <cutoff>             consider as unknown (?) nominal features occuring unfrequently (not implemented)\n");
 	fprintf(stderr,"  -C                      classification mode -- reads examples from <stdin>\n");
-	fprintf(stderr,"  -S <stem>               defines model/data/names stem\n");
+	fprintf(stderr,"  -m <model>              save/load the model to/from this file instead of <stem>.shyp\n");
+	fprintf(stderr,"  -t <file>               output additional error rate from an other file during training (can be used multiple times, not implemented)\n");
 	exit(1);
 }
 
@@ -957,6 +959,7 @@ int main(int argc, char** argv)
 	int maximum_iterations=10;
 	int feature_count_cutoff=0;
 	int classification_mode=0;
+	string_t* model_name=NULL;
 #ifdef USE_THREADS
 	int number_of_workers=1;
 #endif
@@ -1021,6 +1024,12 @@ int main(int argc, char** argv)
 		else if(string_eq_cstr(arg,"-C"))
 		{
 			classification_mode=1;
+		}
+		else if(string_eq_cstr(arg,"-m"))
+		{
+			string_free(arg);
+			arg=(string_t*)array_shift(args);
+			model_name=string_copy(arg);
 		}
 		else usage(argv[0]);
 		string_free(arg);
@@ -1118,8 +1127,11 @@ int main(int argc, char** argv)
 	if(classification_mode)
 	{
 		vector_t* classifiers=NULL;
-		string_t* model_name = string_copy(stem);
-		string_append_cstr(model_name, ".shyp");
+		if(model_name==NULL)
+		{
+			 model_name = string_copy(stem);
+			string_append_cstr(model_name, ".shyp");
+		}
 		classifiers=load_model(templates,classes,model_name->data);
 		string_free(model_name);
 
@@ -1398,8 +1410,11 @@ int main(int argc, char** argv)
 		// unlike boostexter, C0 is always unk, C1 below or absent, C2 above or present
 	}
 
-	string_t* model_name = string_copy(stem);
-	string_append_cstr(model_name, ".shyp");
+	if(model_name==NULL)
+	{
+		model_name = string_copy(stem);
+		string_append_cstr(model_name, ".shyp");
+	}
 	save_model(classifiers,classes,model_name->data);
 	string_free(model_name);
 
