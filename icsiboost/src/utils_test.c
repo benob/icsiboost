@@ -55,7 +55,7 @@ off_t saveValue(hashelement_t* element,void* metadata)
 	return (off_t)element->value;
 }
 
-void* loadValue(void* key,int key_length,off_t location,void* metadata)
+void* loadValue(void* key,size_t key_length,off_t location,void* metadata)
 {
 	return (void*)location;
 }
@@ -226,7 +226,7 @@ int main(int argc, char** argv)
 	//string_free(string);
 
 	fprintf(stderr,"---------- testing hashtables\n");
-	hashtable_t* hashtable=hashtable_new(4);
+	hashtable_t* hashtable=hashtable_new();
 	char* key1="foo";
 	char* key2="bar";
 	int key3=555;
@@ -245,7 +245,7 @@ int main(int argc, char** argv)
 	fprintf(stderr,"%s => %s\n",key_not_found,value);
 	i=(int)hashtable_get_or_default(hashtable,key_not_found,strlen(key_not_found),(void*)-1);
 	fprintf(stderr,"%s => %d\n",key_not_found,i);
-	hashtable=hashtable_resize(hashtable,8);
+	hashtable_resize(hashtable,8);
 	hashtable_stats(hashtable,stderr);
 	i=(int)hashtable_get_or_default(hashtable,key1,strlen(key1),(void*)-1);
 	fprintf(stderr,"%s => %d\n",key1,i);

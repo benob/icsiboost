@@ -23,12 +23,16 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #include <math.h>
 
 #define MIN(a,b) ((a)>(b)?(b):(a))
-#define HASHTABLE_VERSION 2
+#define HASHTABLE_VERSION 3
 #define HASHTABLE_MAGIC 0xabcdef00+HASHTABLE_VERSION
 
-unsigned int _hashtable_function(void* key,int key_length)
+#ifdef HASHTABLE_CENTRALIZE_KEYS
+hashtable_t* _hashtable_key_repository=NULL;
+#endif
+
+uint32_t _hashtable_function(void* key,size_t key_length)
 {
-	unsigned int hash = 0;
+	uint32_t hash = 0;
 	int i;
 	for(i=0;i<key_length;i++)
 	{
@@ -42,111 +46,202 @@ unsigned int _hashtable_function(void* key,int key_length)
 	return hash;
 }
 
-int _hashtable_key_equals(void* key1, int key1_length, void* key2, int key2_length)
+int _hashtable_key_equals(void* key1, size_t key1_length, void* key2, size_t key2_length)
 {
-	int i;
 	if(key1_length!=key2_length)return 0;
-	for(i=0;i<key1_length;i++)if(*(char*)(key1+i)!=*(char*)(key2+i))return 0;
-	return 1;
+	return !memcmp(key1,key2,key1_length);
 }
 
-hashtable_t* hashtable_new(int size)
+hashtable_t* hashtable_new_size_collisions_factor(size_t initial_capacity, size_t max_average_collisions, double resize_factor)
 {
-	hashtable_t* h=MALLOC(sizeof(hashtable_t));
-	if(h==NULL)return NULL;
-	h->size=size;
-	h->buckets=MALLOC(sizeof(vector_t*)*size);
-	if(h->buckets==NULL)
-	{
-		FREE(h);
-		return NULL;
-	}
-	memset(h->buckets,0,sizeof(vector_t*)*size);
-	return h;
+	hashtable_t* output=MALLOC(sizeof(hashtable_t));
+	output->buckets=MALLOC(sizeof(hashelement_t*)*initial_capacity);
+	memset(output->buckets,0,sizeof(hashelement_t*)*initial_capacity);
+	output->length=0;
+	output->size=initial_capacity;
+	output->current_element=NULL;
+#ifdef HASHTABLE_INCREASE_SIZE
+	output->max_average_collisions=max_average_collisions;
+	output->resize_factor=resize_factor;
+#endif
+#ifdef HASHTABLE_GATHER_STATS
+	output->num_accesses=0;
+	output->num_hits_per_access=0;
+#endif
+	return output;
 }
 
-void hashtable_set(hashtable_t* h,void* key,int key_length,void* value)
+void hashtable_set(hashtable_t* input, void* key, size_t key_length, void* value)
 {
-	int i;
-	int bucket=_hashtable_function(key,key_length)%h->size;
-	if(h->buckets[bucket]==NULL)h->buckets[bucket]=vector_new(16);
-	vector_t* v=h->buckets[bucket];
-	for(i=0;i<v->length;i++)
+	//fprintf(stderr,"store(%s,%p)\n",key,value);
+	uint32_t hashcode=_hashtable_function(key, key_length);
+	uint32_t bucket=hashcode%input->size;
+	hashelement_t* element=input->buckets[bucket];
+#ifdef HASHTABLE_REORDER_ON_ACCESS
+	hashelement_t* previous_element=NULL;
+#endif
+#ifdef HASHTABLE_GATHER_STATS
+	unsigned int num_hits=1;
+#endif
+	while(element!=NULL)
 	{
-		hashelement_t* element=(hashelement_t*)vector_get(v,i);
-		if(_hashtable_key_equals(element->key,element->key_length,key,key_length))
+		if(element->key_length==key_length && memcmp(element->key,key,key_length)==0)
 		{
 			element->value=value;
+#ifdef HASHTABLE_GATHER_STATS
+			input->num_hits_per_access+=num_hits;
+			input->num_accesses++;
+#endif
+#ifdef HASHTABLE_REORDER_ON_ACCESS
+			if(previous_element!=NULL)
+			{
+				previous_element->next_in_bucket=element->next_in_bucket;
+				element->next_in_bucket=input->buckets[bucket];
+				input->buckets[bucket]=element;
+			}
+#endif
 			return;
 		}
+#ifdef HASHTABLE_GATHER_STATS
+		num_hits++;
+#endif
+#ifdef HASHTABLE_REORDER_ON_ACCESS
+		previous_element=element;
+#endif
+		element=element->next_in_bucket;
 	}
-	hashelement_t* element=MALLOC(sizeof(hashelement_t));
+#ifdef HASHTABLE_GATHER_STATS
+	input->num_hits_per_access+=num_hits;
+	input->num_accesses++;
+#endif
+	element=MALLOC(sizeof(hashelement_t));
+	element->hashcode=hashcode;
+#ifdef HASHTABLE_CENTRALIZE_KEYS
+	if(input==_hashtable_key_repository)
+	{
+		element->key=key;
+	}
+	else
+	{
+		if(_hashtable_key_repository==NULL)
+			_hashtable_key_repository=hashtable_new();
+		char* repository_key=hashtable_fetch(_hashtable_key_repository, key, key_length);
+		if(repository_key==NULL)
+		{
+			repository_key=MALLOC(key_length);
+			memcpy(repository_key,key,key_length);
+			hashtable_store(_hashtable_key_repository, repository_key, key_length, repository_key);
+		}
+		element->key=repository_key;
+	}
+#else
 	element->key=MALLOC(key_length);
 	memcpy(element->key,key,key_length);
+#endif
 	element->key_length=key_length;
 	element->value=value;
-	vector_push(v,element);
+	element->next_in_bucket=input->buckets[bucket];
+	input->buckets[bucket]=element;
+	input->length++;
+#ifdef HASHTABLE_INCREASE_SIZE
+	if(input->length/input->size>input->max_average_collisions)hashtable_resize(input, (size_t)(input->size*(input->resize_factor)+1));//+input->size);
+#endif
 }
 
-void* hashtable_remove(hashtable_t* h,void* key,int key_length)
+void* hashtable_remove(hashtable_t* input, void* key, size_t key_length)
 {
-	int i;
-	int bucket=_hashtable_function(key,key_length)%h->size;
-	if(h->buckets[bucket]==NULL)return NULL;
-	vector_t* v=h->buckets[bucket];
-	for(i=0;i<v->length;i++)
+	uint32_t hashcode=_hashtable_function(key, key_length);
+	uint32_t bucket=hashcode%input->size;
+	hashelement_t* element=input->buckets[bucket];
+	hashelement_t* previous_element=NULL;
+#ifdef HASHTABLE_GATHER_STATS
+	unsigned int num_hits=0;
+#endif
+	while(element!=NULL)
 	{
-		hashelement_t* element=(hashelement_t*)vector_get(v,i);
-		if(_hashtable_key_equals(element->key,element->key_length,key,key_length))
+		if(element->key_length==key_length && memcmp(element->key,key,key_length)==0)
 		{
-			//cheaper removal: swap elements instead of vector_remove(v,i);
-			vector_set(v,i,vector_get(v,v->length-1));
-			v->length--;
-			if(v->length<v->size/2)_vector_resize(v,v->length+v->length/2);
 			void* value=element->value;
+			if(previous_element==NULL)
+				input->buckets[bucket]=element->next_in_bucket;
+			else
+				previous_element->next_in_bucket=element->next_in_bucket;
 			FREE(element->key);
 			FREE(element);
+			input->length--;
+#ifdef HASHTABLE_GATHER_STATS
+			input->num_accesses++;
+			input->num_hits_per_access+=num_hits;
+#endif
 			return value;
 		}
+#ifdef HASHTABLE_GATHER_STATS
+		num_hits++;
+#endif
+		previous_element=element;
+		element=element->next_in_bucket;
 	}
+#ifdef HASHTABLE_GATHER_STATS
+	input->num_accesses++;
+	input->num_hits_per_access+=num_hits;
+#endif
 	return NULL;
 }
 
-void* hashtable_get(hashtable_t* h,void* key,int key_length)
+void* hashtable_get(hashtable_t* input, void* key, size_t key_length)
 {
-	int i;
-	int bucket=_hashtable_function(key,key_length)%h->size;
-	if(h->buckets[bucket]==NULL)return NULL;
-	vector_t* v=h->buckets[bucket];
-	for(i=0;i<v->length;i++)
+	//fprintf(stderr,"fetch(%s)\n",key);
+	uint32_t hashcode=_hashtable_function(key, key_length);
+	uint32_t bucket=hashcode%input->size;
+	if(input->buckets[bucket]==NULL)return NULL;
+	hashelement_t* element=input->buckets[bucket];
+#ifdef HASHTABLE_REORDER_ON_ACCESS
+	hashelement_t* previous_element=NULL;
+#endif
+#ifdef HASHTABLE_GATHER_STATS
+	unsigned int num_hits=1;
+#endif
+	while(element!=NULL)
 	{
-		hashelement_t* element=(hashelement_t*)vector_get(v,i);
 		if(_hashtable_key_equals(element->key,element->key_length,key,key_length))
 		{
+#ifdef HASHTABLE_GATHER_STATS
+			input->num_hits_per_access+=num_hits;
+			input->num_accesses++;
+#endif
+#ifdef HASHTABLE_REORDER_ON_ACCESS
+			if(previous_element!=NULL)
+			{
+				previous_element->next_in_bucket=element->next_in_bucket;
+				element->next_in_bucket=input->buckets[bucket];
+				input->buckets[bucket]=element;
+			}
+#endif
 			return element->value;
 		}
+#ifdef HASHTABLE_REORDER_ON_ACCESS
+		previous_element=element;
+#endif
+		element=element->next_in_bucket;
+#ifdef HASHTABLE_GATHER_STATS
+		num_hits++;
+#endif
 	}
+#ifdef HASHTABLE_GATHER_STATS
+	input->num_hits_per_access+=num_hits;
+	input->num_accesses++;
+#endif
 	return NULL;
 }
 
-void* hashtable_get_or_default(hashtable_t* h,void* key,int key_length,void* defaultValue)
+void* hashtable_get_or_default(hashtable_t* h,void* key,size_t key_length,void* defaultValue)
 {
-	int i;
-	int bucket=_hashtable_function(key,key_length)%h->size;
-	if(h->buckets[bucket]==NULL)return defaultValue;
-	vector_t* v=h->buckets[bucket];
-	for(i=0;i<v->length;i++)
-	{
-		hashelement_t* element=(hashelement_t*)vector_get(v,i);
-		if(_hashtable_key_equals(element->key,element->key_length,key,key_length))
-		{
-			return element->value;
-		}
-	}
-	return defaultValue;
+	void* value=hashtable_get(h, key, key_length);
+	if(value==NULL)return defaultValue;
+	return value;
 }
 
-off_t hashtable_get_from_file(FILE* file,void* key,int key_length)
+off_t hashtable_get_from_file(FILE* file,void* key,size_t key_length)
 {
 	int j;
 	int size;
@@ -159,7 +254,7 @@ off_t hashtable_get_from_file(FILE* file,void* key,int key_length)
 		return (off_t)-1;
 	}
 	fread(&size,sizeof(int),1,file);
-	int bucket=_hashtable_function(key,key_length)%size;
+	uint32_t bucket=_hashtable_function(key,key_length)%size;
 	off_t bucketLocation=-1;
 	int bucketLength=-1,bucketSize=-1;
 	fseeko(file,(off_t)(bucket*(sizeof(int)*2+sizeof(off_t))),SEEK_CUR);
@@ -175,8 +270,8 @@ off_t hashtable_get_from_file(FILE* file,void* key,int key_length)
 		char* ptr=buffer;
 		for(j=0;j<bucketLength;j++)
 		{
-			int read_key_length=*(int*)ptr;
-			ptr+=sizeof(int);
+			size_t read_key_length=*(size_t*)ptr;
+			ptr+=sizeof(size_t);
 			//warn("%p %d %p %d\n",key,key_length,ptr,read_key_length);
 			if(_hashtable_key_equals(key,key_length,ptr,read_key_length))
 			{
@@ -193,7 +288,7 @@ off_t hashtable_get_from_file(FILE* file,void* key,int key_length)
 	return -1;
 }
 
-off_t hashtable_get_from_mapped(mapped_t* mapped,void* key,int key_length)
+off_t hashtable_get_from_mapped(mapped_t* mapped,void* key,size_t key_length)
 {
 	int j;
 	int pointer=0;
@@ -206,7 +301,7 @@ off_t hashtable_get_from_mapped(mapped_t* mapped,void* key,int key_length)
 	pointer+=sizeof(int);
 	int size=*(int*)(mapped->data+pointer);
 	pointer+=sizeof(int);
-	int bucket=_hashtable_function(key,key_length)%size;
+	uint32_t bucket=_hashtable_function(key,key_length)%size;
 	pointer+=bucket*(sizeof(int)*2+sizeof(off_t));
 	off_t bucketLocation=*(off_t*)(mapped->data+pointer);
 	pointer+=sizeof(off_t);
@@ -223,8 +318,8 @@ off_t hashtable_get_from_mapped(mapped_t* mapped,void* key,int key_length)
 		for(j=0;j<bucketLength;j++)
 		{
 			//fprintf(stderr,"j=%d ptr=%d\n",j,ptr-buffer);
-			int read_key_length=*(int*)ptr;
-			ptr+=sizeof(int);
+			size_t read_key_length=*(size_t*)ptr;
+			ptr+=sizeof(size_t);
 			if(_hashtable_key_equals(key,key_length,ptr,read_key_length))
 			{
 				ptr+=read_key_length;
@@ -244,137 +339,136 @@ void _hashtable_freeelement(void* data, void* metadata)
 	FREE(element);
 }
 
-void hashtable_free(hashtable_t* h)
+void hashtable_free(hashtable_t* input)
 {
 	int i;
-	for(i=0;i<h->size;i++)
-		if(h->buckets[i]!=NULL)
+	for(i=0;i<input->size;i++)
+	{
+		hashelement_t* element=input->buckets[i];
+		while(element)
 		{
-			vector_apply(h->buckets[i],_hashtable_freeelement,NULL);
-			vector_free(h->buckets[i]);
+			hashelement_t* tmp=element->next_in_bucket;
+#ifdef HASHTABLE_CENTRALIZE_KEYS
+			if(input==_hashtable_key_repository) FREE(element->key);
+#else
+			FREE(element->key);
+#endif
+			FREE(element);
+			element=tmp;
 		}
-	FREE(h->buckets);
-	FREE(h);
+	}
+	FREE(input->buckets);
+	FREE(input);
 }
+
 
 void hashtable_optimize(hashtable_t* h)//, int (*compare)(const void* a,const void* b))
 {
-	int i;
-	for(i=0;i<h->size;i++)
-	{
-		if(h->buckets[i]!=NULL)
-		{
-			_vector_resize(h->buckets[i],h->buckets[i]->length);
-			//if(compare!=NULL)qsort(h->buckets[i]->data,h->buckets[i]->length,sizeof(void*),compare);
-		}
-	}
+	warn("hashtable_optimize(%p) is deprecated", h);
 }
 
-int hashtable_memory_size(hashtable_t* h)
+size_t hashtable_memory_size(hashtable_t* input)
 {
-	int size=sizeof(hashtable_t);
-	int i;
-	size+=h->size*sizeof(vector_t*);
-	for(i=0;i<h->size;i++)
+	size_t memory=sizeof(hashtable_t);
+	memory+=input->size*sizeof(hashelement_t*);
+	memory+=input->size*sizeof(hashelement_t);
+#ifdef HASHTABLE_CENTRALIZE_KEYS
+	if(input==_hashtable_key_repository)
+#endif
 	{
-		if(h->buckets[i]!=NULL)
-			size+=h->buckets[i]->size*(sizeof(void*)+sizeof(hashelement_t))+sizeof(vector_t);
-	}
-	return size;
-}
-
-void hashtable_stats(hashtable_t* h,FILE* stream)
-{
-	int elements=0;
-	int capacity=0;
-	int size=0;
-	int memory=0;
-	int i,j;
-	for(i=0;i<h->size;i++)
-	{
-		if(h->buckets[i]!=NULL)
+		int i;
+		for(i=0;i<input->size;i++)
 		{
-			capacity+=h->buckets[i]->size;
-			memory+=h->buckets[i]->size*(sizeof(void*)+sizeof(hashelement_t))+sizeof(vector_t);
-			for(j=0;j<h->buckets[i]->length;j++)
+			hashelement_t* element=input->buckets[i];
+			while(element)
 			{
-				hashelement_t* element=(hashelement_t*)vector_get(h->buckets[i],j);
 				memory+=element->key_length;
+				element=element->next_in_bucket;
 			}
-			size++;
-			elements+=h->buckets[i]->length;
 		}
 	}
-	memory+=h->size*sizeof(vector_t*);
-	memory+=sizeof(hashtable_t);
-	fprintf(stream,"hashtable_stat(%p) memory=%dk cost=%.2fbpe elements=%d capacity=%d size=%d/%zd average=%.2f load=%.2f\n",
-			h,memory/1024,(double)memory/elements,elements,capacity,size,h->size,(double)elements/size,(double)elements/capacity);
+	return memory;
+}
+
+void hashtable_stats(hashtable_t* input,FILE* stream)
+{
+	size_t memory=hashtable_memory_size(input);
+	fprintf(stream,"hashtable_stats(%p) size=%d elements=%d avg_coll=%.2f"
+#ifdef HASHTABLE_GATHER_STATS
+		" avg_access=%.2f"
+#endif
+		" Bpe=%.2f memory=%.2fk\n",
+		input,input->size,input->length,input->length/(double)input->size,
+#ifdef HASHTABLE_GATHER_STATS
+		input->num_hits_per_access/(double)input->num_accesses,
+#endif
+		memory/(double)input->length,memory/1024.0);
 }
 
 int hashtable_save(hashtable_t* h,FILE* file, off_t (*saveValue)(hashelement_t* element,void* metadata), void* metadata)
 {
-	int i,j;
+	int i;
 	off_t bucketLocation[h->size];
 	off_t begining=ftello(file);
 	fseeko(file,h->size*(sizeof(int)*2+sizeof(off_t))+sizeof(int)*2,SEEK_CUR);
+	size_t *bucketLength=MALLOC(sizeof(size_t)*h->size);
 	for(i=0;i<h->size;i++)
 	{
 		bucketLocation[i]=ftello(file);
-		if(h->buckets[i]!=NULL)
+		bucketLength[i]=0;
+		hashelement_t* element=h->buckets[i];
+		while(element!=NULL)
 		{
-			vector_t* v=h->buckets[i];
-			for(j=0;j<v->length;j++)
+			bucketLength[i]++;
+			fwrite(&element->key_length,sizeof(size_t),1,file);
+			fwrite(element->key,element->key_length,1,file);
+			if(saveValue!=NULL)
 			{
-				hashelement_t* element=vector_get(v,j);
-				fwrite(&element->key_length,sizeof(int),1,file);
-				fwrite(element->key,element->key_length,1,file);
-				if(saveValue!=NULL)
-				{
-					off_t location=saveValue(element, metadata);
-					fwrite(&location,sizeof(off_t),1,file);
-				}
-				else
-				{
-					fprintf(stderr,">value %p\n",element->value);
-					fwrite(&element->value,sizeof(void*),1,file);
-				}
+				off_t location=saveValue(element, metadata);
+				fwrite(&location,sizeof(off_t),1,file);
 			}
+			else
+			{
+				fprintf(stderr,">value %p\n",element->value);
+				fwrite(&element->value,sizeof(void*),1,file);
+			}
+			element=element->next_in_bucket;
 		}
 	}
 	off_t end=ftello(file);
 	fseeko(file,begining,SEEK_SET);
 	int magic=HASHTABLE_MAGIC;
 	fwrite(&magic,sizeof(int),1,file);
-	fwrite(&(h->size),sizeof(int),1,file);
+	fwrite(&(h->size),sizeof(size_t),1,file);
 	// magic, size, size*[location,length,size]
-	int zero=0;
+	size_t zero=0;
 	for(i=0;i<h->size;i++)
 	{
 		fwrite(&bucketLocation[i],sizeof(off_t),1,file);
 		if(h->buckets[i]!=NULL)
 		{
-			fwrite(&h->buckets[i]->length,sizeof(int),1,file);
-			int diskSize=0;
+			fwrite(&bucketLength[i],sizeof(size_t),1,file);
+			size_t diskSize=0;
 			if(i<h->size-1)diskSize=bucketLocation[i+1]-bucketLocation[i];
 			else diskSize=end-bucketLocation[i];
-			fwrite(&diskSize,sizeof(int),1,file);
+			fwrite(&diskSize,sizeof(size_t),1,file);
 			//warn("%d %lld %d %d",i,bucketLocation[i],h->buckets[i]->length,diskSize);
 		}
 		else
 		{
 			//warn("%d %lld %d %d",i,bucketLocation[i],0,0)
-			fwrite(&zero,sizeof(int),1,file);
-			fwrite(&zero,sizeof(int),1,file);
+			fwrite(&zero,sizeof(size_t),1,file);
+			fwrite(&zero,sizeof(size_t),1,file);
 		}
 	}
 	fseeko(file,end,SEEK_SET);
 	return 0;
 }
 
-hashtable_t* hashtable_load(FILE* file, void* (*loadValue)(void* key,int key_length,off_t location,void* metadata),void* metadata)
+hashtable_t* hashtable_load(FILE* file, void* (*loadValue)(void* key,size_t key_length,off_t location,void* metadata),void* metadata)
 {
 	int i,j;
-	int size;
+	size_t size;
 	int magic=-1;
 	fread(&magic,sizeof(int),1,file);
 	if(magic!=HASHTABLE_MAGIC)
@@ -382,51 +476,45 @@ hashtable_t* hashtable_load(FILE* file, void* (*loadValue)(void* key,int key_len
 		warn("bad magic %d!=%d",magic,HASHTABLE_MAGIC);
 		return NULL;
 	}
-	fread(&size,sizeof(int),1,file);
-	hashtable_t* h=hashtable_new(size);
+	fread(&size,sizeof(size_t),1,file);
+	hashtable_t* h=hashtable_new_size(size);
 	off_t bucketLocation[size];
-	int bucketLength[size];
-	int bucketSize[size];
+	size_t bucketLength[size];
+	size_t bucketSize[size];
 	for(i=0;i<h->size;i++)
 	{
 		fread(&bucketLocation[i],sizeof(off_t),1,file);
-		fread(&bucketLength[i],sizeof(int),1,file);
-		fread(&bucketSize[i],sizeof(int),1,file);
+		fread(&bucketLength[i],sizeof(size_t),1,file);
+		fread(&bucketSize[i],sizeof(size_t),1,file);
 	}
 	for(i=0;i<h->size;i++)
 	{
 		//warn("%d %lld %d %d",i,bucketLocation[i],bucketLength[i],bucketSize[i]);
 		if(bucketLength[i]!=0)
 		{
-			h->buckets[i]=vector_new(bucketLength[i]);
 			fseeko(file,bucketLocation[i],SEEK_SET);
 			char buffer[bucketSize[i]];
 			fread(buffer,bucketSize[i],1,file);
 			char* ptr=buffer;
 			for(j=0;j<bucketLength[i];j++)
 			{
-				hashelement_t* element=MALLOC(sizeof(hashelement_t));
-				element->key_length=*(int*)ptr;
-				ptr+=sizeof(int);
-				element->key=MALLOC(element->key_length);
-				memcpy(element->key,ptr,element->key_length);
-				ptr+=element->key_length;
+				size_t key_length=*(size_t*)ptr;
+				ptr+=sizeof(size_t);
+				char* key=ptr;
+				ptr+=key_length;
+				void* value=NULL;
 				if(loadValue!=NULL)
 				{
-					element->value=loadValue(element->key,element->key_length,*(off_t*)ptr,metadata);
+					value=loadValue(key,key_length,*(off_t*)ptr,metadata);
 					ptr+=sizeof(off_t);
 				}
 				else
 				{
-					element->value=*(void**)ptr;
+					value=*(void**)ptr;
 					ptr+=sizeof(void*);
 				}
-				vector_push(h->buckets[i],element);
+				hashtable_set(h,key,key_length,value);
 			}
-		}
-		else
-		{
-			h->buckets[i]=NULL;
 		}
 	}
 	return h;
@@ -434,16 +522,14 @@ hashtable_t* hashtable_load(FILE* file, void* (*loadValue)(void* key,int key_len
 
 void hashtable_apply(hashtable_t* h, void (*callback)(hashelement_t* element, void* metadata),void* metadata)
 {
-	int i,j;
+	int i;
 	for(i=0;i<h->size;i++)
 	{
-		if(h->buckets[i]!=NULL)
+		hashelement_t* element=h->buckets[i];
+		while(element!=NULL)
 		{
-			for(j=0;j<h->buckets[i]->length;j++)
-			{
-				hashelement_t* element=(hashelement_t*)vector_get(h->buckets[i],j);
-				callback(element,metadata);
-			}
+			callback(element,metadata);
+			element=element->next_in_bucket;
 		}
 	}
 }
@@ -451,12 +537,14 @@ void hashtable_apply(hashtable_t* h, void (*callback)(hashelement_t* element, vo
 vector_t* hashtable_elements(hashtable_t* h)
 {
 	int i;
-	vector_t* output=vector_new(16);
+	vector_t* output=vector_new(h->length);
 	for(i=0;i<h->size;i++)
 	{
-		if(h->buckets[i]!=NULL)
+		hashelement_t* element=h->buckets[i];
+		while(element!=NULL)
 		{
-			vector_append(output,h->buckets[i]);
+			vector_push(output,element);
+			element=element->next_in_bucket;
 		}
 	}
 	return output;
@@ -465,17 +553,14 @@ vector_t* hashtable_elements(hashtable_t* h)
 vector_t* hashtable_keys(hashtable_t* h)
 {
 	int i;
-	vector_t* output=vector_new(16);
+	vector_t* output=vector_new(h->length);
 	for(i=0;i<h->size;i++)
 	{
-		if(h->buckets[i]!=NULL)
+		hashelement_t* element=h->buckets[i];
+		while(element!=NULL)
 		{
-			int j;
-			for(j=0;j<h->buckets[i]->length;j++)
-			{
-				hashelement_t* element=(hashelement_t*)vector_get(h->buckets[i],j);
-				vector_push(output, element->key);
-			}
+			vector_push(output,element->key);
+			element=element->next_in_bucket;
 		}
 	}
 	return output;
@@ -484,17 +569,14 @@ vector_t* hashtable_keys(hashtable_t* h)
 vector_t* hashtable_values(hashtable_t* h)
 {
 	int i;
-	vector_t* output=vector_new(16);
+	vector_t* output=vector_new(h->length);
 	for(i=0;i<h->size;i++)
 	{
-		if(h->buckets[i]!=NULL)
+		hashelement_t* element=h->buckets[i];
+		while(element)
 		{
-			int j;
-			for(j=0;j<h->buckets[i]->length;j++)
-			{
-				hashelement_t* element=(hashelement_t*)vector_get(h->buckets[i],j);
-				vector_push(output, element->value);
-			}
+			vector_push(output,element->value);
+			element=element->next_in_bucket;
 		}
 	}
 	return output;
@@ -503,16 +585,13 @@ vector_t* hashtable_values(hashtable_t* h)
 hashelement_t* hashtable_first_element(hashtable_t* h)
 {
 	int i;
-	h->current_bucket=-1;
-	h->current_bucket_element=-1;
+	if(h->length==0)return NULL;
 	for(i=0;i<h->size;i++)
 	{
-		if(h->buckets[i]!=NULL && h->buckets[i]->length>0)
+		if(h->buckets[i]!=NULL)
 		{
-			h->current_bucket=i;
-			h->current_bucket_element=0;
-			hashelement_t* element=(hashelement_t*)vector_get(h->buckets[i],h->current_bucket_element);
-			return element;
+			h->current_element=h->buckets[i];
+			return h->buckets[i];
 		}
 	}
 	return NULL;
@@ -520,25 +599,21 @@ hashelement_t* hashtable_first_element(hashtable_t* h)
 
 hashelement_t* hashtable_next_element(hashtable_t* h)
 {
-	int i;
-	if(h->current_bucket==-1 || h->current_bucket_element==-1)return NULL;
-	h->current_bucket_element++;
-	for(i=h->current_bucket;i<h->size;i++)
+	uint32_t i;
+	if(h->current_element->next_in_bucket!=NULL)
 	{
-		if(h->buckets[i]!=NULL && h->buckets[i]->length>0)
+		h->current_element=h->current_element->next_in_bucket;
+		return h->current_element;
+	}
+	uint32_t next_bucket=h->current_element->hashcode%h->size+1;
+	for(i=next_bucket;i<h->size;i++)
+	{
+		if(h->buckets[i]!=NULL)
 		{
-			if(h->current_bucket_element>=h->buckets[i]->length)
-			{
-				h->current_bucket_element=0;
-				continue;
-			}
-			h->current_bucket=i;
-			hashelement_t* element=(hashelement_t*)vector_get(h->buckets[i],h->current_bucket_element);
-			return element;
+			h->current_element=h->buckets[i];
+			return h->buckets[i];
 		}
 	}
-	h->current_bucket=-1;
-	h->current_bucket_element=-1;
 	return NULL;
 }
 
@@ -581,12 +656,27 @@ void _hashtable_replicate(hashelement_t* element, void* metadata)
 	hashtable_set(h,element->key,element->key_length,element->value);
 }
 
-hashtable_t* hashtable_resize(hashtable_t* h,int newSize)
+void hashtable_resize(hashtable_t* input, size_t new_size)
 {
-	if(newSize==h->size)return h;
-	hashtable_t* output=hashtable_new(newSize);
-	hashtable_apply(h,_hashtable_replicate,output);
-	hashtable_free(h);
-	return output;
+	//hashtable_print_stats(input,stdout);
+	hashelement_t** old_buckets=input->buckets;
+	input->buckets=MALLOC(sizeof(hashelement_t*)*new_size);
+	memset(input->buckets,0,sizeof(hashelement_t*)*new_size);
+	int i;
+	for(i=0;i<input->size;i++)
+	{
+		hashelement_t* element=old_buckets[i];
+		while(element)
+		{
+			hashelement_t* tmp=element->next_in_bucket;
+			uint32_t bucket=element->hashcode%new_size;
+			element->next_in_bucket=input->buckets[bucket];
+			input->buckets[bucket]=element;
+			element=tmp;
+		}
+	}
+	input->size=new_size;
+	FREE(old_buckets);
+	//hashtable_print_stats(input,stdout);
 }
 

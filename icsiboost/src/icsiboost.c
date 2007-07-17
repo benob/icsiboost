@@ -312,7 +312,7 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 	{
 		int example_id=vector_get_int32_t(ordered,i);
 		example_t* example=(example_t*)vector_get(examples,(size_t)example_id);
-		//fprintf(stdout,"%zd %zd %f\n",i,vector_get_int32_t(ordered,i),vector_get_float(example->features,column));
+		//fprintf(stdout,"%zd %zd %f\n",i,vector_get_int32_t(ordered,i),vector_get_float(template->values,example_id));
 		if(isnan(vector_get_float(template->values,example_id)))continue; // skip unknown values
 		int next_example_id=vector_get_int32_t(ordered,i+1);
 		//example_t* next_example=(example_t*)vector_get(examples,(size_t)next_example_id);
@@ -696,7 +696,6 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 		for(i=0;i<templates->length;i++)
 		{
 			template_t* template=(template_t*)vector_get(templates,i);
-			hashtable_optimize(template->dictionary);
 			vector_optimize(template->tokens);
 			vector_optimize(template->values);
 		}
@@ -735,7 +734,7 @@ vector_t* load_model(vector_t* templates, vector_t* classes, char* filename)
 {
 	int i;
 	vector_t* classifiers=vector_new(16);
-	hashtable_t* templates_by_name=hashtable_new(templates->length);
+	hashtable_t* templates_by_name=hashtable_new();
 	for(i=0; i<templates->length; i++)
 	{
 		template_t* template=(template_t*)vector_get(templates,i);
@@ -895,18 +894,18 @@ void save_model(vector_t* classifiers, vector_t* classes, char* filename)
 		{
 			fprintf(output,"THRESHOLD:%s:\n\n",classifier->template->name->data);
 			int l=0;
-			for(l=0;l<classes->length;l++) fprintf(output,"%.12f ",classifier->c0[l]); fprintf(output,"\n\n");
-			for(l=0;l<classes->length;l++) fprintf(output,"%.12f ",classifier->c1[l]); fprintf(output,"\n\n");
-			for(l=0;l<classes->length;l++) fprintf(output,"%.12f ",classifier->c2[l]); fprintf(output,"\n\n");
-			fprintf(output,"%.12f\n\n\n",classifier->threshold);
+			for(l=0;l<classes->length;l++) fprintf(output,"%.10f ",classifier->c0[l]); fprintf(output,"\n\n");
+			for(l=0;l<classes->length;l++) fprintf(output,"%.10f ",classifier->c1[l]); fprintf(output,"\n\n");
+			for(l=0;l<classes->length;l++) fprintf(output,"%.10f ",classifier->c2[l]); fprintf(output,"\n\n");
+			fprintf(output,"%.10f\n\n\n",classifier->threshold);
 		}
 		else if(classifier->type==CLASSIFIER_TYPE_TEXT && classifier->template->type==FEATURE_TYPE_TEXT)
 		{
 			tokeninfo_t* tokeninfo=(tokeninfo_t*) vector_get(classifier->template->tokens,classifier->token);
 			fprintf(output,"SGRAM:%s:%s\n\n",classifier->template->name->data,tokeninfo->key);
 			int l=0;
-			for(l=0;l<classes->length;l++) fprintf(output,"%.12f ",classifier->c1[l]); fprintf(output,"\n\n");
-			for(l=0;l<classes->length;l++) fprintf(output,"%.12f ",classifier->c2[l]); fprintf(output,"\n\n");
+			for(l=0;l<classes->length;l++) fprintf(output,"%.10f ",classifier->c1[l]); fprintf(output,"\n\n");
+			for(l=0;l<classes->length;l++) fprintf(output,"%.10f ",classifier->c2[l]); fprintf(output,"\n\n");
 			fprintf(output,"\n");
 		}
 		else if(classifier->type==CLASSIFIER_TYPE_TEXT && classifier->template->type==FEATURE_TYPE_SET)
@@ -914,8 +913,8 @@ void save_model(vector_t* classifiers, vector_t* classes, char* filename)
 			tokeninfo_t* tokeninfo=(tokeninfo_t*) vector_get(classifier->template->tokens,classifier->token);
 			fprintf(output,"SGRAM:%s:%d\n\n",classifier->template->name->data,tokeninfo->id-1); // 0 is unknown (?), so skip it
 			int l=0;
-			for(l=0;l<classes->length;l++) fprintf(output,"%.12f ",classifier->c1[l]); fprintf(output,"\n\n");
-			for(l=0;l<classes->length;l++) fprintf(output,"%.12f ",classifier->c2[l]); fprintf(output,"\n\n");
+			for(l=0;l<classes->length;l++) fprintf(output,"%.10f ",classifier->c1[l]); fprintf(output,"\n\n");
+			for(l=0;l<classes->length;l++) fprintf(output,"%.10f ",classifier->c2[l]); fprintf(output,"\n\n");
 			fprintf(output,"\n");
 		}
 		else die("unknown classifier type \"%d\"",classifier->type);
@@ -1066,7 +1065,7 @@ int main(int argc, char** argv)
 			template->column = line_num-1;
 			template->name = (string_t*)array_get(parts, 0);
 			string_t* type = (string_t*)array_get(parts, 1);
-			template->dictionary = hashtable_new(16384);
+			template->dictionary = hashtable_new();
 			template->tokens = vector_new(16);
 			template->values = vector_new_float(16);
 			//template->dictionary_counts = vector_new(16);
