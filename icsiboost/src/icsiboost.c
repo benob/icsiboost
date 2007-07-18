@@ -19,7 +19,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 # include <config.h>
 #endif
 
-#define USE_THREADS
+//#define USE_THREADS
 
 #include "utils/common.h"
 #include "utils/vector.h"
@@ -83,16 +83,9 @@ double SQRT(double number)
 
 /*
 WARNING:
-- the vector code is not 64bit safe. will be reworked. (FIXED)
 - garbage collection is not working yet => do not activate it
-- threads have a strange behaviour on osx (FIXED)
 TODO:
-- loading/saving a model
-- test mode
-- fixed load hash tables (adapt number of buckets)
-- mutex/condition based semaphores
 - free memory and remove leaks (and go through that again and again)
-- bag-of-ngrams features
 - frequency cutoff
 - sampleing and ranking
 - more COMMENTS !!!
@@ -149,6 +142,7 @@ typedef struct tokeninfo { // store info about a word (or token)
 
 double smoothing=0.5;              // -E <number> in boostexter
 int verbose=0;
+int output_weights=0;
 
 //int *random_sequence;
 
@@ -540,8 +534,8 @@ double compute_classification_error(vector_t* classifiers, vector_t* examples, d
 	}
 	if(sum_of_weights!=NULL)
 	{
-		double min_weight=examples->length*num_classes;
-		double max_weight=0;
+		//double min_weight=examples->length*num_classes;
+		//double max_weight=0;
 		//normalization/=num_classes*examples->length;
 		for(l=0;l<num_classes;l++) // update the sum of weights by class
 		{
@@ -552,16 +546,18 @@ double compute_classification_error(vector_t* classifiers, vector_t* examples, d
 		{
 			example_t* example=(example_t*)vector_get(examples,i);
 			//fprintf(stdout,"%d",i);
+			if(output_weights)fprintf(stdout,"iteration=%d example=%d weights:\n",classifiers->length, i);
 			for(l=0;l<num_classes;l++)
 			{
 				example->weight[l]/=normalization;
-				if(example->weight[l]<0)die("ERROR: negative weight: %d %d %f",i,l,example->weight[l]);
+				if(output_weights)fprintf(stdout," %f",example->weight[l]);
+				/*if(example->weight[l]<0)die("ERROR: negative weight: %d %d %f",i,l,example->weight[l]);
 				if(min_weight>example->weight[l]){min_weight=example->weight[l];}
-				if(max_weight<example->weight[l]){max_weight=example->weight[l];}
+				if(max_weight<example->weight[l]){max_weight=example->weight[l];}*/
 				//fprintf(stdout," %f",example->weight[l]);
 				sum_of_weights[b(example,l)][l]+=example->weight[l];
 			}
-			//fprintf(stdout,"\n");
+			if(output_weights)fprintf(stdout,"\n");
 		}
 		//fprintf(stdout,"norm=%.12f min=%.12f max=%.12f\n",normalization,min_weight,max_weight);
 	}
@@ -880,23 +876,58 @@ vector_t* load_model(vector_t* templates, vector_t* classes, char* filename)
 	return classifiers;
 }
 
-void save_model(vector_t* classifiers, vector_t* classes, char* filename)
+void save_model(vector_t* classifiers, vector_t* classes, char* filename, int pack_model)
 {
 	FILE* output=fopen(filename,"w");
 	if(output==NULL)die("could not output model in \"%s\"",filename);
 	int i;
-	fprintf(output,"%zd\n\n",classifiers->length);
+	int num_classifiers=classifiers->length;
+	if(pack_model)
+	{
+		hashtable_t* packed_classifiers=hashtable_new();
+		for(i=0; i<classifiers->length; i++)
+		{
+			weakclassifier_t* classifier=vector_get(classifiers, i);
+			string_t* identifier=string_sprintf("%d:%f:%d",classifier->column, classifier->threshold, classifier->token);
+			weakclassifier_t* previous_classifier=hashtable_get(packed_classifiers, identifier->data, identifier->length);
+			if(previous_classifier!=NULL)
+			{
+				int l;
+				for(l=0;l<classes->length;l++)
+				{
+					previous_classifier->c0[l]+=classifier->c0[l];
+					previous_classifier->c1[l]+=classifier->c1[l];
+					previous_classifier->c2[l]+=classifier->c2[l];
+				}
+				previous_classifier->alpha+=classifier->alpha;
+				FREE(classifier->c0);
+				FREE(classifier->c1);
+				FREE(classifier->c2);
+				FREE(classifier);
+				vector_set(classifiers, i ,NULL);
+				num_classifiers--;
+			}
+			else
+			{
+				hashtable_set(packed_classifiers, identifier->data, identifier->length, classifier);
+			}
+			string_free(identifier);
+		}
+		hashtable_free(packed_classifiers);
+	}
+	fprintf(output,"%d\n\n",num_classifiers);
 	for(i=0; i<classifiers->length; i++)
 	{
 		weakclassifier_t* classifier=(weakclassifier_t*)vector_get(classifiers,i);
+		if(classifier==NULL)continue;
 		fprintf(output,"   %.12f Text:",classifier->alpha);
 		if(classifier->type==CLASSIFIER_TYPE_THRESHOLD)
 		{
 			fprintf(output,"THRESHOLD:%s:\n\n",classifier->template->name->data);
 			int l=0;
-			for(l=0;l<classes->length;l++) fprintf(output,"%.10f ",classifier->c0[l]); fprintf(output,"\n\n");
-			for(l=0;l<classes->length;l++) fprintf(output,"%.10f ",classifier->c1[l]); fprintf(output,"\n\n");
-			for(l=0;l<classes->length;l++) fprintf(output,"%.10f ",classifier->c2[l]); fprintf(output,"\n\n");
+			for(l=0;l<classes->length;l++) fprintf(output,"%.10f ",classifier->c0[l]/classifier->alpha); fprintf(output,"\n\n");
+			for(l=0;l<classes->length;l++) fprintf(output,"%.10f ",classifier->c1[l]/classifier->alpha); fprintf(output,"\n\n");
+			for(l=0;l<classes->length;l++) fprintf(output,"%.10f ",classifier->c2[l]/classifier->alpha); fprintf(output,"\n\n");
 			fprintf(output,"%.10f\n\n\n",classifier->threshold);
 		}
 		else if(classifier->type==CLASSIFIER_TYPE_TEXT && classifier->template->type==FEATURE_TYPE_TEXT)
@@ -904,8 +935,8 @@ void save_model(vector_t* classifiers, vector_t* classes, char* filename)
 			tokeninfo_t* tokeninfo=(tokeninfo_t*) vector_get(classifier->template->tokens,classifier->token);
 			fprintf(output,"SGRAM:%s:%s\n\n",classifier->template->name->data,tokeninfo->key);
 			int l=0;
-			for(l=0;l<classes->length;l++) fprintf(output,"%.10f ",classifier->c1[l]); fprintf(output,"\n\n");
-			for(l=0;l<classes->length;l++) fprintf(output,"%.10f ",classifier->c2[l]); fprintf(output,"\n\n");
+			for(l=0;l<classes->length;l++) fprintf(output,"%.10f ",classifier->c1[l]/classifier->alpha); fprintf(output,"\n\n");
+			for(l=0;l<classes->length;l++) fprintf(output,"%.10f ",classifier->c2[l]/classifier->alpha); fprintf(output,"\n\n");
 			fprintf(output,"\n");
 		}
 		else if(classifier->type==CLASSIFIER_TYPE_TEXT && classifier->template->type==FEATURE_TYPE_SET)
@@ -913,8 +944,8 @@ void save_model(vector_t* classifiers, vector_t* classes, char* filename)
 			tokeninfo_t* tokeninfo=(tokeninfo_t*) vector_get(classifier->template->tokens,classifier->token);
 			fprintf(output,"SGRAM:%s:%d\n\n",classifier->template->name->data,tokeninfo->id-1); // 0 is unknown (?), so skip it
 			int l=0;
-			for(l=0;l<classes->length;l++) fprintf(output,"%.10f ",classifier->c1[l]); fprintf(output,"\n\n");
-			for(l=0;l<classes->length;l++) fprintf(output,"%.10f ",classifier->c2[l]); fprintf(output,"\n\n");
+			for(l=0;l<classes->length;l++) fprintf(output,"%.10f ",classifier->c1[l]/classifier->alpha); fprintf(output,"\n\n");
+			for(l=0;l<classes->length;l++) fprintf(output,"%.10f ",classifier->c2[l]/classifier->alpha); fprintf(output,"\n\n");
 			fprintf(output,"\n");
 		}
 		else die("unknown classifier type \"%d\"",classifier->type);
@@ -924,17 +955,21 @@ void save_model(vector_t* classifiers, vector_t* classes, char* filename)
 
 void usage(char* program_name)
 {
-	fprintf(stderr,"USAGE: %s [--version|-n <iterations>|-E <smoothing>|-V|-j <threads>|-f <cutoff>|-C] -S <stem>\n",program_name);
+	fprintf(stderr,"USAGE: %s [options] -S <stem>\n",program_name);
 	fprintf(stderr,"  --version               print version info\n");
 	fprintf(stderr,"  -S <stem>               defines model/data/names stem\n");
 	fprintf(stderr,"  -n <iterations>         number of boosting iterations\n");
 	fprintf(stderr,"  -E <smoothing>          set smoothing value (default=0.5)\n");
 	fprintf(stderr,"  -V                      verbose mode\n");
-	fprintf(stderr,"  -j <threads>            number of threaded weak learners\n");
-	fprintf(stderr,"  -f <cutoff>             consider as unknown (?) nominal features occuring unfrequently (not implemented)\n");
 	fprintf(stderr,"  -C                      classification mode -- reads examples from <stdin>\n");
-	fprintf(stderr,"  -m <model>              save/load the model to/from this file instead of <stem>.shyp\n");
-	fprintf(stderr,"  -t <file>               output additional error rate from an other file during training (can be used multiple times, not implemented)\n");
+	fprintf(stderr,"  -o                      long output in classification mode\n");
+	fprintf(stderr,"  --cutoff <freq>         consider as unknown (?) nominal features occuring unfrequently (not implemented)\n");
+	fprintf(stderr,"  --jobs <threads>        number of threaded weak learners\n");
+	fprintf(stderr,"  --do-not-pack-model     do not pack model (to get individual training steps)\n");
+	fprintf(stderr,"  --output-weights        output training examples weights at each iterations\n");
+	fprintf(stderr,"  --model <model>         save/load the model to/from this file instead of <stem>.shyp\n");
+	fprintf(stderr,"  --train <file>          bypass the <stem>.data filename to specify training examples\n");
+	fprintf(stderr,"  --test <file>           output additional error rate from an other file during training (can be used multiple times, not implemented)\n");
 	exit(1);
 }
 
@@ -958,7 +993,10 @@ int main(int argc, char** argv)
 	int maximum_iterations=10;
 	int feature_count_cutoff=0;
 	int classification_mode=0;
+	int classification_output=0;
+	int pack_model=1;
 	string_t* model_name=NULL;
+	string_t* data_filename=NULL;
 #ifdef USE_THREADS
 	int number_of_workers=1;
 #endif
@@ -975,7 +1013,7 @@ int main(int argc, char** argv)
 			maximum_iterations=string_to_int32(arg);
 			if(maximum_iterations<=0)die("invalid value for -n [%s]",arg->data);
 		}
-		else if(string_eq_cstr(arg,"-f"))
+		else if(string_eq_cstr(arg,"--cutoff"))
 		{
 			die("feature count cutoff not supported yet");
 			/* string_free(arg);
@@ -992,14 +1030,14 @@ int main(int argc, char** argv)
 			smoothing=string_to_double(arg);
 			if(isnan(smoothing) || smoothing<=0)die("invalid value for -E [%s]",arg->data);
 		}
-		else if(string_eq_cstr(arg,"-j"))
+		else if(string_eq_cstr(arg,"--jobs"))
 		{
 #ifdef USE_THREADS
 			string_free(arg);
 			arg=(string_t*)array_shift(args);
-			if(arg==NULL)die("value needed for -j");
+			if(arg==NULL)die("value needed for --jobs");
 			number_of_workers=string_to_int32(arg);
-			if(number_of_workers<=0)die("invalid value for -j [%s]",arg->data);
+			if(number_of_workers<=0)die("invalid value for -jobs [%s]",arg->data);
 #else
 			die("thread support has not been activated at compile time");
 #endif
@@ -1024,11 +1062,29 @@ int main(int argc, char** argv)
 		{
 			classification_mode=1;
 		}
-		else if(string_eq_cstr(arg,"-m"))
+		else if(string_eq_cstr(arg,"-o"))
+		{
+			classification_output=1;
+		}
+		else if(string_eq_cstr(arg,"--model"))
 		{
 			string_free(arg);
 			arg=(string_t*)array_shift(args);
 			model_name=string_copy(arg);
+		}
+		else if(string_eq_cstr(arg,"--train"))
+		{
+			string_free(arg);
+			arg=(string_t*)array_shift(args);
+			data_filename=string_copy(arg);
+		}
+		else if(string_eq_cstr(arg,"--do-not-pack-model"))
+		{
+			pack_model=0;
+		}
+		else if(string_eq_cstr(arg,"--output-weights"))
+		{
+			output_weights=1;
 		}
 		else usage(argv[0]);
 		string_free(arg);
@@ -1132,6 +1188,12 @@ int main(int argc, char** argv)
 			string_append_cstr(model_name, ".shyp");
 		}
 		classifiers=load_model(templates,classes,model_name->data);
+		double sum_of_alpha=0;
+		for(i=0;i<classifiers->length;i++)
+		{
+			weakclassifier_t* classifier=vector_get(classifiers,i);
+			sum_of_alpha+=classifier->alpha;
+		}
 		string_free(model_name);
 
 		string_t* line=NULL;
@@ -1187,23 +1249,68 @@ int main(int argc, char** argv)
 						for(l=0; l<classes->length; l++) score[l]+=classifier->alpha*classifier->c2[l];
 				}
 			}
-			int argmax=0;
-			double max=score[argmax];
-			for(l=1; l<classes->length; l++)if(max<score[l]){max=score[l]; argmax=l;}
-			string_t* class=vector_get(classes, argmax);
+			string_t* true_class=NULL;
 			if(tokens->length > templates->length)
 			{
-				string_t* true_class=vector_get(tokens, tokens->length-1);
+				true_class=vector_get(tokens, tokens->length-1);
 				while(true_class->data[true_class->length-1]=='.')
 				{
 					true_class->data[true_class->length-1]='\0';
 					true_class->length--;
 				}
-				fprintf(stdout,"ref: %s ",true_class->data);
 			}
-			fprintf(stdout,"hyp: %s/%f",class->data,max);
-			for(l=0; l<classes->length; l++)fprintf(stdout," %f",score[l]);
-			fprintf(stdout,"\n");
+			for(l=0; l<classes->length; l++)score[l]/=sum_of_alpha;
+			if(classification_output==0)
+			{
+				if(true_class!=NULL)
+				{
+					for(l=0; l<classes->length; l++)
+					{
+						string_t* class=vector_get(classes,l);
+						if(string_cmp(class,true_class)==0) fprintf(stdout,"1 ");
+						else fprintf(stdout,"0 ");
+					}
+				}
+				else
+				{
+					for(l=0; l<classes->length; l++)fprintf(stdout,"? ");
+				}
+				for(l=0; l<classes->length; l++)
+				{
+					fprintf(stdout,"%.12f",score[l]);
+					if(l<classes->length-1)fprintf(stdout," ");
+				}
+				fprintf(stdout,"\n");
+			}
+			else
+			{
+				fprintf(stdout,"\n\n");
+				for(i=0; i<templates->length; i++)
+				{
+					template_t* template=vector_get(templates,i);
+					string_t* token=vector_get(tokens,i);
+					fprintf(stdout,"%s: %s\n", template->name->data, token->data);
+				}
+				if(true_class!=NULL)
+				{
+					fprintf(stdout,"correct label = %s\n",true_class->data);
+					for(l=0; l<classes->length; l++)
+					{
+						string_t* class=vector_get(classes,l);
+						fprintf(stdout,"%s%s % 5f : %s\n",string_cmp(true_class,class)==0?"*":" ",
+							(score[l]>0?">":(string_cmp(true_class,class)==0?"*":" ")),score[l],class->data);
+					}
+				}
+				else
+				{
+					fprintf(stdout,"correct label = ?\n");
+					for(l=0; l<classes->length; l++)
+					{
+						string_t* class=vector_get(classes,l);
+						fprintf(stdout,"   % 5f : %s\n", score[l],class->data);
+					}
+				}
+			}
 			vector_free(tokens);
 			string_array_free(array_of_tokens);
 			string_free(line);
@@ -1212,8 +1319,11 @@ int main(int argc, char** argv)
 	}
 
 	// load a train, dev and test sets (if available)
-	string_t* data_filename = string_copy(stem);
-	string_append_cstr(data_filename, ".data");
+	if(data_filename==NULL)
+	{
+		data_filename = string_copy(stem);
+		string_append_cstr(data_filename, ".data");
+	}
 	vector_t* examples = load_examples(data_filename->data, templates, classes, feature_count_cutoff, 0);
 	string_free(data_filename);
 
@@ -1414,7 +1524,7 @@ int main(int argc, char** argv)
 		model_name = string_copy(stem);
 		string_append_cstr(model_name, ".shyp");
 	}
-	save_model(classifiers,classes,model_name->data);
+	save_model(classifiers,classes,model_name->data,pack_model);
 	string_free(model_name);
 
 	// release data structures (this is why we need a garbage collector ;)
@@ -1425,6 +1535,7 @@ int main(int argc, char** argv)
 	for(i = 0; i < classifiers->length; i++)
 	{
 		weakclassifier_t* classifier=(weakclassifier_t*)vector_get(classifiers,i);
+		if(classifier==NULL)continue;
 		FREE(classifier->c0);
 		FREE(classifier->c1);
 		FREE(classifier->c2);

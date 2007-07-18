@@ -278,7 +278,7 @@ void vector_remove_duplicates(vector_t* v)
 	size_t i,j=0;
 	for(i=0;i<v->length && j<v->length;i++)
 	{
-		memcpy(v->data+v->element_size*i,v->data+v->element_size*j,v->element_size);
+		memmove(v->data+v->element_size*i,v->data+v->element_size*j,v->element_size);
 		j++;
 		while(j<v->length && memcmp(v->data+v->element_size*i,v->data+v->element_size*j, v->element_size)==0)j++;
 	}

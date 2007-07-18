@@ -94,7 +94,7 @@ int main(int argc, char** argv)
 	vector_push(vector2,(void*)666);
 	vector_push(vector2,(void*)777);
 	vector_insert(vector,3,vector2);
-	//vector_free(vector2);
+	vector_free(vector2);
 	vector_reverse(vector);
 	vector_sort(vector,int_comparator);
 	fprintf(stderr,"vector length=%d\n",vector->length);
@@ -113,7 +113,7 @@ int main(int argc, char** argv)
 	fprintf(stderr,"vector size=%d bytes\n",vector_memory_size(vector));
 	vector_optimize(vector);
 	fprintf(stderr,"vector size=%d bytes\n",vector_memory_size(vector));
-	//vector_free(vector);
+	vector_free(vector);
 
 	fprintf(stderr,"---------- testing arrays\n");
 	array_t* array=array_new();
@@ -140,7 +140,7 @@ int main(int argc, char** argv)
 	array_push(array2,(void*)666);
 	array_push(array2,(void*)777);
 	array_insert(array,3,array2);
-	//array_free(array2);
+	array_free(array2);
 	array_reverse(array);
 	array_sort(array,int_comparator);
 	fprintf(stderr,"array length=%d\n",array->length);
@@ -158,14 +158,14 @@ int main(int argc, char** argv)
 
 	fprintf(stderr,"---------- testing conversions array <-> vector\n");
 	vector=vector_from_array(array);
-	//array_free(array);
+	array_free(array);
 	vector_apply(vector,print_callback,"%d ,");
 	fprintf(stderr,"\n");
 	array=array_from_vector(vector);
-	//vector_free(vector);
+	vector_free(vector);
 	array_apply(array,print_callback,"%d ,");
 	fprintf(stderr,"\n");
-	//array_free(array);
+	array_free(array);
 
 	fprintf(stderr,"---------- testing strings\n");
 	string_t* string=string_new("l");
@@ -174,9 +174,9 @@ int main(int argc, char** argv)
 	string_t* string2=string_new("s");
 	string_t* string3=string_new("d");
 	string_prepend(string,string2);
+	string_free(string2);
 	string_append(string,string3);
-	//string_free(string2);
-	//string_free(string3);
+	string_free(string3);
 	fprintf(stderr,"%s\n",string->data);
 	string2=string_new("ham");
 	string3=string_new("cheese");
@@ -189,41 +189,41 @@ int main(int argc, char** argv)
 	array_push(array,string);
 	string=string_join_cstr(" + ",array);
 	fprintf(stderr,"%s = a sandwich\n",string->data);
-	//for(i=0;i<array->length-1;i++) // warning, we added bread twice, so do not deallocate it twice
-		//string_free((string_t*)array_get(array,i));
-	//array_free(array);
+	for(i=0;i<array->length-1;i++) // warning, we added bread twice, so do not deallocate it twice
+		string_free((string_t*)array_get(array,i));
+	array_free(array);
 	array=string_split("\\+",string);
 	for(i=0;i<array->length;i++)
 	{
 		fprintf(stderr,"[%s]\n",((string_t*)array_get(array,i))->data);
 	}
-	//string_array_free(array);
+	string_array_free(array);
 	string_chomp(string);
 	string_reverse(string);
 	fprintf(stderr,"%s = ???\n",string->data);
 	string2=string_substr(string,4,10);
 	fprintf(stderr,"%s\n",string2->data);
-	//string_free(string2);
+	string_free(string2);
 	string2=string_new("-");
 	string_replace(string,"[ae]",string2,0); // no group replacement yet ($1,$2...)
-	//string_free(string2);
+	string_free(string2);
 	fprintf(stderr,"%s\n",string->data);
-	//string_free(string);
+	string_free(string);
 	string3=string_new("3");
 	int32_t string3_int=string_to_int32(string3);
 	fprintf(stderr,"int=%d\n",string3_int);
-	//string_free(string3);
+	string_free(string3);
 	string3=string_new("3.33333");
 	float string3_float=string_to_float(string3);
 	fprintf(stderr,"float=%f\n",string3_float);
-	//string_free(string3);
+	string_free(string3);
 	string3=string_new("3.33333333333");
 	double string3_double=string_to_double(string3);
 	fprintf(stderr,"double=%.12f\n",string3_double);
-	//string_free(string3);
+	string_free(string3);
 	string=string_sprintf("%d %f %f",string3_int, string3_float, string3_double);
 	fprintf(stderr,"[%s]\n",string->data);
-	//string_free(string);
+	string_free(string);
 
 	fprintf(stderr,"---------- testing hashtables\n");
 	hashtable_t* hashtable=hashtable_new();
@@ -255,19 +255,19 @@ int main(int argc, char** argv)
 		hashelement_t* element=(hashelement_t*)vector_get(elements,i);
 		fprintf(stderr,"element => %p %d\n",element->key,(int)element->value);
 	}
-	//vector_free(elements);
+	vector_free(elements);
 	vector_t* keys=hashtable_keys(hashtable);
 	for(i=0;i<keys->length;i++)
 	{
 		fprintf(stderr,"key => %p\n",vector_get(keys,i));
 	}
-	//vector_free(keys);
+	vector_free(keys);
 	vector_t* values=hashtable_values(hashtable);
 	for(i=0;i<values->length;i++)
 	{
 		fprintf(stderr,"value => %d\n",(int)vector_get(values,i));
 	}
-	//vector_free(values);
+	vector_free(values);
 	for(value=(char*)hashtable_first_value(hashtable);value;value=(char*)hashtable_next_value(hashtable))
 	{
 		fprintf(stderr,"iter value=%d\n",(int)value);
@@ -279,14 +279,14 @@ int main(int argc, char** argv)
 	if(file==NULL)die("foo.hashtable");
 	//hashtable_save(hashtable,file,NULL,NULL); (equivalent to saving the void* in value)
 	hashtable_save(hashtable,file,saveValue,NULL);
-	//hashtable_free(hashtable);
+	hashtable_free(hashtable);
 	fclose(file);
 	file=fopen("foo.hashtable","r");
 	if(file==NULL)die("foo.hashtable");
 	//hashtable=hashtable_load(file,NULL,NULL); (equivalent to loading the value in void*)
 	hashtable=hashtable_load(file,loadValue,NULL);
 	hashtable_apply(hashtable,hashelement_print_callback,NULL); // you can observe that the keys get reallocated !!!
-	//hashtable_free(hashtable);
+	hashtable_free(hashtable);
 	fseek(file,0,SEEK_SET);
 	off_t offset=hashtable_get_from_file(file,key1,strlen(key1));
 	fprintf(stderr,"direct load: %s %d\n",key1,(int)offset);

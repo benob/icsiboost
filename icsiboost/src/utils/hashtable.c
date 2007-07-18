@@ -462,6 +462,7 @@ int hashtable_save(hashtable_t* h,FILE* file, off_t (*saveValue)(hashelement_t* 
 		}
 	}
 	fseeko(file,end,SEEK_SET);
+	FREE(bucketLength);
 	return 0;
 }
 
