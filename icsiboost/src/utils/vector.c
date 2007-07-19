@@ -30,8 +30,8 @@ void* vector_shift(vector_t* v) { void** output=(void**) _vector_shift(v); retur
 void vector_unshift(vector_t* v, void* value) { _vector_unshift(v, &value); }
 size_t vector_search(vector_t* v, void* value) { return _vector_search(v ,&value); }
 size_t vector_search_sorted(vector_t* v, void* value, int (*comparator)(const void*,const void*)) { return _vector_search_sorted(v, &value, comparator); }
-void* vector_get(vector_t* v, size_t index) { return *(void**) _vector_get(v, index); }
-void vector_set(vector_t* v, size_t index, void* value) { _vector_set(v, index, &value); }
+extern void* vector_get(vector_t* v, size_t index) { return *(void**) _vector_get(v, index); }
+extern void vector_set(vector_t* v, size_t index, void* value) { _vector_set(v, index, &value); }
 void vector_insert_element(vector_t* v, int index, void* value) { _vector_insert_element(v, index, &value); }
 
 size_t vector_memory_size(vector_t* input)
@@ -235,7 +235,7 @@ vector_t* vector_subpart(vector_t* v, size_t from, size_t to)
 	return output;
 }
 
-void* _vector_get(vector_t* v, size_t index)
+extern void* _vector_get(vector_t* v, size_t index)
 {
 #ifdef DEBUG
 	if(index>=v->length) warn("vector_get(%zd), out-of-bounds, index>=%zd", index, v->length);
@@ -243,7 +243,7 @@ void* _vector_get(vector_t* v, size_t index)
 	return v->data+v->element_size*index;
 }
 
-void _vector_set(vector_t* v, size_t index, void* value)
+extern void _vector_set(vector_t* v, size_t index, void* value)
 {
 #ifdef DEBUG
 	if(index>=v->length) warn("vector_set(%zd, %p), out-of-bounds, index>=%zd", index, value, v->length);
