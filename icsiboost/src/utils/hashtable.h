@@ -32,7 +32,8 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #include "utils/mapped.h"
 
 #include <sys/types.h>
-#include <idn-int.h>
+#include <stdint.h>
+//#include <idn-int.h>
 
 typedef struct hashelement {
 	void* key;

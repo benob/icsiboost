@@ -19,7 +19,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 # include <config.h>
 #endif
 
-//#define USE_THREADS
+#define USE_THREADS
 //#define USE_FLOATS
 
 #include "utils/common.h"
@@ -45,7 +45,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #include <math.h>
 #include <time.h>
 
-#ifdef USE_FLOAT
+#ifdef USE_FLOATS
 #define double float
 #endif
 
@@ -113,7 +113,7 @@ typedef struct template { // a column definition
 	hashtable_t* dictionary;       // dictionary for token based template
 	vector_t* tokens;              // the actual tokens (if the feature is text; contains tokeninfo)
 	vector_t* values;              // continuous values (if the feature is continuous)
-	vector_t* ordered;             // ordered example ids according to value for continuous columns
+	int32_t* ordered;             // ordered example ids according to value for continuous columns
 	vector_t* classifiers;         // classifiers related to that template (in classification mode only)
 } template_t;
 
@@ -248,25 +248,27 @@ weakclassifier_t* train_text_stump(double min_objective, template_t* template, v
 	return classifier;
 }
 
-weakclassifier_t* train_continuous_stump(double min_objective, template_t* template, vector_t* examples, int num_classes)
+weakclassifier_t* train_continuous_stump(double min_objective, template_t* template, vector_t* examples_vector, int num_classes)
 {
 	size_t i,j,l;
 	int column=template->column;
-	vector_t* ordered=template->ordered;
+	float* values=(float*)template->values->data;
+	int32_t* ordered=template->ordered;
+	example_t** examples=(example_t**)examples_vector->data;
 	if(ordered==NULL) // only order examples once, then keep the result in the template
 	{
-		ordered=vector_new_int32_t(examples->length);
-		ordered->length=examples->length;
+		ordered=MALLOC(sizeof(int32_t)*examples_vector->length);
 		int32_t index=0;
-		for(index=0;index<examples->length;index++)vector_set_int32_t(ordered,index,(int32_t)index);
+		for(index=0;index<examples_vector->length;index++)ordered[index]=index;
 		//for(i=0;i<examples->length && i<4;i++)fprintf(stdout,"%d %f\n",i,vector_get_float(((example_t*)vector_get(examples,i))->features,column));
-		ordered->length=examples->length;
 		int local_comparator(const void* a, const void* b)
 		{
 			int32_t aa=*(int32_t*)a;
 			int32_t bb=*(int32_t*)b;
-			float aa_value=vector_get_float(template->values,(size_t)aa);
-			float bb_value=vector_get_float(template->values,(size_t)bb);
+			float aa_value=values[aa];
+			float bb_value=values[bb];
+			//float aa_value=vector_get_float(template->values,(size_t)aa);
+			//float bb_value=vector_get_float(template->values,(size_t)bb);
 			//float aa_value=vector_get_float(((example_t*)vector_get(examples,(size_t)aa))->features,column);
 			//float bb_value=vector_get_float(((example_t*)vector_get(examples,(size_t)bb))->features,column);
 			//fprintf(stdout,"%d(%f) <=> %d(%f)\n",aa,aa_value,bb,bb_value);
@@ -276,7 +278,8 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 			if(isnan(bb_value) || aa_value<bb_value)return -1;
 			return 0;
 		}
-		vector_sort(ordered,local_comparator);
+		qsort(ordered,examples_vector->length,sizeof(int32_t),local_comparator);
+		//vector_sort(ordered,local_comparator);
 		template->ordered=ordered;
 	}
 
@@ -287,14 +290,14 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 			weight[j][0][l]=0.0;
 			weight[j][1][l]=0.0;
 		}
-	for(i=0;i<ordered->length;i++) // compute the "unknown" weights and the weight of examples after threshold
+	for(i=0;i<examples_vector->length;i++) // compute the "unknown" weights and the weight of examples after threshold
 	{
-		int example_id=vector_get_int32_t(ordered,i);
-		example_t* example=vector_get(examples,example_id);
+		int32_t example_id=ordered[i];
+		example_t* example=examples[example_id];
 		//fprintf(stdout,"%d %f\n",column,vector_get_float(example->features,column));
 		for(l=0;l<num_classes;l++)
 		{
-			if(isnan(vector_get_float(template->values,example_id)))
+			if(isnan(values[example_id]))
 				weight[0][b(example,l)][l]+=example->weight[l];
 			else
 				weight[2][b(example,l)][l]+=example->weight[l];
@@ -312,22 +315,22 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 	classifier->c0=MALLOC(sizeof(double)*num_classes);
 	classifier->c1=MALLOC(sizeof(double)*num_classes);
 	classifier->c2=MALLOC(sizeof(double)*num_classes);
-	double epsilon=smoothing/(num_classes*examples->length);
+	double epsilon=smoothing/(num_classes*examples_vector->length);
 
-	for(i=0;i<ordered->length-1;i++) // compute the objective function at every possible threshold (in between examples)
+	for(i=0;i<examples_vector->length-1;i++) // compute the objective function at every possible threshold (in between examples)
 	{
-		int example_id=vector_get_int32_t(ordered,i);
-		example_t* example=(example_t*)vector_get(examples,(size_t)example_id);
+		int32_t example_id=ordered[i];
+		example_t* example=examples[example_id];
 		//fprintf(stdout,"%zd %zd %f\n",i,vector_get_int32_t(ordered,i),vector_get_float(template->values,example_id));
-		if(isnan(vector_get_float(template->values,example_id)))break; // skip unknown values
-		int next_example_id=vector_get_int32_t(ordered,i+1);
+		if(isnan(values[example_id]))break; // skip unknown values
 		//example_t* next_example=(example_t*)vector_get(examples,(size_t)next_example_id);
 		for(l=0;l<num_classes;l++) // update the objective function by putting the current example the other side of the threshold
 		{
 			weight[1][b(example,l)][l]+=example->weight[l];
 			weight[2][b(example,l)][l]-=example->weight[l];
 		}
-		if(vector_get_float(template->values,example_id)==vector_get_float(template->values,next_example_id))continue; // same value
+		int next_example_id=ordered[i+1];
+		if(values[example_id]==values[next_example_id])continue; // same value
 		double objective=0;
 		for(l=0;l<num_classes;l++) // compute objective Z()
 		{
@@ -346,7 +349,7 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 		if(objective-min_objective<-1e-11) // get argmin
 		{
 			classifier->objective=objective;
-			classifier->threshold=((double)vector_get_float(template->values,next_example_id)+(double)vector_get_float(template->values,example_id))/2.0; // threshold between current and next example
+			classifier->threshold=((double)values[next_example_id]+(double)values[example_id])/2.0; // threshold between current and next example
 			if(isnan(classifier->threshold))die("threshold is nan, column=%d, objective=%f, i=%zd",column,objective,i); // should not happend
 			//fprintf(stdout," %d:%d:%f",column,i,classifier->threshold);
 			min_objective=objective;
@@ -1598,7 +1601,7 @@ int main(int argc, char** argv)
 		}
 		vector_free(template->tokens);
 		vector_free(template->values);
-		if(template->ordered!=NULL)vector_free(template->ordered);
+		if(template->ordered!=NULL)FREE(template->ordered);
 		if(template->classifiers!=NULL)vector_free(template->classifiers);
 		FREE(template);
 	}
