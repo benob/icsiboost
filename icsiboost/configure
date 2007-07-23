@@ -4843,7 +4843,7 @@ done
 
 
 # generate version information
-svn info|awk 'BEGIN{print "#ifndef _VERSION_H_\n#define _VERSION_H_\n#define SVN_INFO \\"}{print "\"  " $0 "\\n\" \\"}END{print "\"\"\n#endif"}' > src/version.h
+#svn info|awk 'BEGIN{print "#ifndef _VERSION_H_\n#define _VERSION_H_\n#define SVN_INFO \\"}{print "\"  " $0 "\\n\" \\"}END{print "\"\"\n#endif"}' > $SOURCE_DIR/version.h
 
                     ac_config_files="$ac_config_files Makefile src/Makefile"
 

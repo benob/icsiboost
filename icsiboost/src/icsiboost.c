@@ -28,7 +28,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #include "utils/hashtable.h"
 #include "utils/mapped.h"
 #include "utils/array.h"
-#include "version.h"
+//#include "version.h"
 
 #ifdef USE_THREADS
 #include "utils/threads.h"
@@ -1023,8 +1023,7 @@ void print_version(char* program_name)
 #ifdef __VERSION__
 		__VERSION__);
 #endif
-	fprintf(stdout,"Subversion info:\n");
-	fprintf(stdout,"%s",SVN_INFO);
+	fprintf(stdout,"Subversion info: $Id$\n");
 }
 
 int main(int argc, char** argv)
