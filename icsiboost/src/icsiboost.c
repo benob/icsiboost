@@ -1023,7 +1023,11 @@ void print_version(char* program_name)
 #ifdef __VERSION__
 		__VERSION__);
 #endif
-	fprintf(stdout,"Subversion info: $Id$\n");
+	fprintf(stdout,"Subversion info:\n");
+	fprintf(stdout,"$URL$\n");
+	fprintf(stdout,"$Date$\n");
+	fprintf(stdout,"$Revision$\n");
+	fprintf(stdout,"$Author$\n");
 }
 
 int main(int argc, char** argv)
