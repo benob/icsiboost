@@ -1010,12 +1010,19 @@ void usage(char* program_name)
 
 void print_version(char* program_name)
 {
-	fprintf(stdout,"%s, boosting decision stumps\n", program_name);
+	fprintf(stdout,"%s v%s, Boosting decision stumps.\n", PACKAGE, VERSION);
 	fprintf(stdout,"Written by Benoit Favre.\n\n");
 	fprintf(stdout,"Copyright (C) 2007 International Computer Science Institute.\n");
 	fprintf(stdout,"This is free software; see the source for copying conditions.  There is NO\n");
 	fprintf(stdout,"warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n");
-	fprintf(stdout,"Build: %s at %s\n",__DATE__,__TIME__);
+	fprintf(stdout,"Build: %s at %s"
+#ifdef __VERSION__
+		", gcc %s\n",
+#endif
+		__DATE__,__TIME__,
+#ifdef __VERSION__
+		__VERSION__);
+#endif
 	fprintf(stdout,"Subversion info:\n");
 	fprintf(stdout,"%s",SVN_INFO);
 }
@@ -1330,11 +1337,11 @@ int main(int argc, char** argv)
 				}
 				if(true_class!=NULL)
 				{
-					fprintf(stdout,"correct label = %s\n",true_class->data);
+					fprintf(stdout,"correct label = %s \n",true_class->data);
 					for(l=0; l<classes->length; l++)
 					{
 						string_t* class=vector_get(classes,l);
-						fprintf(stdout,"%s%s % 5f : %s\n",string_cmp(true_class,class)==0?"*":" ",
+						fprintf(stdout,"%s%s % 5f : %s \n",string_cmp(true_class,class)==0?"*":" ",
 								(score[l]>0?">":(string_cmp(true_class,class)==0?"*":" ")),score[l],class->data);
 					}
 				}
