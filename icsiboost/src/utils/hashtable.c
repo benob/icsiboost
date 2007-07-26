@@ -393,7 +393,7 @@ size_t hashtable_memory_size(hashtable_t* input)
 void hashtable_stats(hashtable_t* input,FILE* stream)
 {
 	size_t memory=hashtable_memory_size(input);
-	fprintf(stream,"hashtable_stats(%p) size=%d elements=%d avg_coll=%.2f"
+	fprintf(stream,"hashtable_stats(%p) size=%zd elements=%zd avg_coll=%.2f"
 #ifdef HASHTABLE_GATHER_STATS
 		" avg_access=%.2f"
 #endif

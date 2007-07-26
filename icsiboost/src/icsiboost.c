@@ -395,15 +395,15 @@ typedef struct workertoolbox {
 
 
 workertoolbox_t* toolbox=NULL;
-SHARED(int,next_worker_num,0);
+//SHARED(int,next_worker_num,0);
 
 void* threaded_worker(void* data)
 {
 	int column;
-	LOCK(next_worker_num);
+	/*LOCK(next_worker_num);
 	int worker_num=next_worker_num;
 	next_worker_num++;
-	UNLOCK(next_worker_num);
+	UNLOCK(next_worker_num);*/
 	while(!finished)
 	{
 		//sem_wait(toolbox->ready_to_process);
@@ -562,7 +562,7 @@ double compute_classification_error(vector_t* classifiers, vector_t* examples, d
 		{
 			example_t* example=(example_t*)vector_get(examples,i);
 			//fprintf(stdout,"%d",i);
-			if(output_weights)fprintf(stdout,"iteration=%d example=%d weights:\n",classifiers->length, i);
+			if(output_weights)fprintf(stdout,"iteration=%zd example=%d weights:\n",classifiers->length, i);
 			for(l=0;l<num_classes;l++)
 			{
 				example->weight[l]/=normalization;
@@ -715,26 +715,27 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 		for(i=0;i<templates->length;i++)
 		{
 			template_t* template=(template_t*)vector_get(templates,i);
+			if(template->tokens->length>1)
+			{
+				for(j=1; j<template->tokens->length; j++) // remove unfrequent features
+				{
+					tokeninfo_t* tokeninfo=vector_get(template->tokens,j);
+					tokeninfo->id=j;
+					if(tokeninfo->count<feature_count_cutoff)
+					{
+						hashtable_remove(template->dictionary, tokeninfo->key, strlen(tokeninfo->key));
+						if(tokeninfo->examples!=NULL)vector_free(tokeninfo->examples);
+						FREE(tokeninfo->key);
+						FREE(tokeninfo);
+						memcpy(template->tokens->data+j*sizeof(void*),template->tokens->data+(template->tokens->length-1)*sizeof(void*),sizeof(void*));
+						template->tokens->length--;
+						j--;
+					}
+				}
+			}
 			vector_optimize(template->tokens);
 			vector_optimize(template->values);
-			/*{
-				tokeninfo_t* info=hashtable_get(template->dictionary, "595", strlen("595"));
-				if(info!=NULL)
-				fprintf(stdout,"%s(%d): [%s] %d\n",template->name->data, template->column+1, info->key, info->examples->length);
-			}*/
 		}
-		/*for(i=0; i<templates->length; i++)
-		  {
-		  template_t* template=(template_t*)vector_get(templates,i);
-		  for(j=0; j<template->dictionary_counts->length; j++)
-		  {
-		  if((int)vector_get(template->dictionary_counts,j)<feature_count_cutoff)
-		  {
-		  void* element=hashtable_remove(template->dictionary,vector_get(template->tokens,j),strlen(vector_get(template->tokens,j)));
-		  if(element!=NULL)die("YOUPI %s", (char*)vector_get(template->tokens,j));
-		  }
-		  }
-		  }*/
 	}
 	// initalize weights and score
 	for(i=0;i<examples->length;i++)
@@ -998,10 +999,10 @@ void usage(char* program_name)
 	fprintf(stderr,"  -V                      verbose mode\n");
 	fprintf(stderr,"  -C                      classification mode -- reads examples from <stdin>\n");
 	fprintf(stderr,"  -o                      long output in classification mode\n");
-	fprintf(stderr,"  --cutoff <freq>         consider as unknown (?) nominal features occuring unfrequently (not implemented)\n");
+	fprintf(stderr,"  --cutoff <freq>         ignore nominal features occuring unfrequently\n");
 	fprintf(stderr,"  --jobs <threads>        number of threaded weak learners\n");
 	fprintf(stderr,"  --do-not-pack-model     do not pack model (to get individual training steps)\n");
-	fprintf(stderr,"  --output-weights        output training examples weights at each iterations\n");
+	fprintf(stderr,"  --output-weights        output training examples weights at each iteration\n");
 	fprintf(stderr,"  --model <model>         save/load the model to/from this file instead of <stem>.shyp\n");
 	fprintf(stderr,"  --train <file>          bypass the <stem>.data filename to specify training examples\n");
 	fprintf(stderr,"  --test <file>           output additional error rate from an other file during training (can be used multiple times, not implemented)\n");
@@ -1060,12 +1061,12 @@ int main(int argc, char** argv)
 		}
 		else if(string_eq_cstr(arg,"--cutoff"))
 		{
-			die("feature count cutoff not supported yet");
-			/* string_free(arg);
+			//die("feature count cutoff not supported yet");
+			string_free(arg);
 			arg=(string_t*)array_shift(args);
 			if(arg==NULL)die("value needed for -f");
 			feature_count_cutoff=string_to_int32(arg);
-			if(feature_count_cutoff<=0)die("invalid value for -f [%s]",arg->data);*/
+			if(feature_count_cutoff<=0)die("invalid value for -f [%s]",arg->data);
 		}
 		else if(string_eq_cstr(arg,"-E"))
 		{
@@ -1147,6 +1148,7 @@ int main(int argc, char** argv)
 	string_t* names_filename = string_copy(stem);
 	string_append_cstr(names_filename, ".names");
 	mapped_t* input = mapped_load_readonly(names_filename->data);
+	hashtable_t* templates_by_name=hashtable_new();
 	if(input == NULL) die("can't load \"%s\"", names_filename->data);
 	string_t* line = NULL;
 	int line_num = 0;
@@ -1200,7 +1202,11 @@ int main(int argc, char** argv)
 				}
 				string_array_free(values);
 			}
+
+			if(hashtable_exists(templates_by_name, template->name->data, template->name->length)!=NULL)
+				die("duplicate feature name \"%s\", line %d in %s",template->name->data, line_num+1, names_filename->data);
 			vector_push(templates, template);
+			hashtable_set(templates_by_name, template->name->data, template->name->length, template);
 			string_free(type);
 			array_free(parts);
 			//if(verbose)fprintf(stdout,"TEMPLATE: %d %s %d\n",template->column,template->name->data,template->type);
@@ -1223,6 +1229,7 @@ int main(int argc, char** argv)
 	}
 	vector_optimize(templates);
 	mapped_free(input);
+	hashtable_free(templates_by_name);
 	string_free(names_filename);
 
 	if(classification_mode)
