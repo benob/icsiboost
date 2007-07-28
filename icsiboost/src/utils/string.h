@@ -18,10 +18,8 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #ifndef __STRING_H_
 #define __STRING_H_
 
-/* TODO:
-   - group replacement in regular expressions
-   - more operations on string arrays, like grep(), free_strings()...
-   */
+// use a cache for regular expressions so that you don't have to recompile them each time (a la perl)
+#define STRING_REGEX_USE_CACHE
 
 #include "utils/common.h"
 #include "utils/vector.h"
@@ -35,13 +33,6 @@ typedef struct string {
 	size_t size;
 	char* data;
 } string_t;
-
-typedef struct regexstatus {
-	regex_t expression;
-	vector_t* groups;
-	size_t start;
-	size_t end;
-} regexstatus_t;
 
 string_t* string_resize(string_t* input,size_t newSize);
 string_t* string_new(const char* string);
@@ -58,11 +49,10 @@ string_t* string_reverse(string_t* input);
 string_t* string_chomp(string_t* input);
 string_t* string_join(string_t* separator, array_t* parts);
 string_t* string_join_cstr(const char* separator, array_t* parts);
-void regexstatus_free(regexstatus_t* status);
-#define string_match_once(input,pattern,flags) string_match(input,pattern,flags,NULL)
-regexstatus_t* string_match(string_t* input, const char* pattern, int flags, regexstatus_t* status);
-array_t* string_split(const char* separator, string_t* input);
-int string_replace(string_t* input, const char* pattern, string_t* replacement, int flags);
+vector_t* string_match(string_t* input, const char* pattern, const char* flags);
+array_t* string_split(string_t* input, const char* separator, const char* flags);
+array_t* string_array_grep(array_t* input, const char* pattern, const char* flags);
+int string_replace(string_t* input, const char* pattern, const char* replacement, const char* flags);
 void string_array_free(array_t* input);
 void string_vector_free(vector_t* input);
 int32_t string_to_int32(string_t* input);

@@ -29,6 +29,8 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 
 #include "utils/common.h"
 #include "utils/vector.h"
+#include "utils/array.h"
+#include "utils/string.h"
 #include "utils/mapped.h"
 
 #include <sys/types.h>
@@ -58,30 +60,34 @@ typedef struct hashtable {
 #endif
 } hashtable_t;
 
-uint32_t _hashtable_function(void* key,size_t key_length);
-int _hashtable_key_equals(void* key1, size_t key1_length, void* key2, size_t key2_length);
+uint32_t _hashtable_function(const void* key,size_t key_length);
+int _hashtable_key_equals(const void* key1, size_t key1_length,const void* key2, size_t key2_length);
 #define hashtable_new() hashtable_new_size_collisions_factor(16, 5, 2)
 #define hashtable_new_size(size) hashtable_new_size_collisions_factor(size, 5, 2)
 #define hashtable_new_size_collisions(size,collisions) hashtable_new_size_collisions_factor(size, collisions, 2)
 hashtable_t* hashtable_new_size_collisions_factor(size_t size, size_t max_avg_collisions, double resize_factor);
+#define hashtable_from_string_array(array) string_array_to_hashtable(array)
+hashtable_t* string_array_to_hashtable(array_t* array);
+#define hashtable_to_string_array(hashtable) string_array_from_hashtable(hashtable)
+array_t* string_array_from_hashtable(hashtable_t* input);
 #define hashtable_store(h,key,key_length,value) hashtable_set(h,key,key_length,value)
 #define hashtable_put(h,key,key_length,value) hashtable_set(h,key,key_length,value)
-void hashtable_set(hashtable_t* h,void* key,size_t key_length,void* value);
+void hashtable_set(hashtable_t* h,const void* key,size_t key_length,void* value);
 #define hashtable_delete(h, key, key_length) hashtable_remove(h, key, key_length)
-void* hashtable_remove(hashtable_t* h,void* key,size_t key_length);
+void* hashtable_remove(hashtable_t* h,const void* key,size_t key_length);
 #define hashtable_exists(h,key,key_length) hashtable_get(h,key,key_length)
 #define hashtable_fetch(h,key,key_length) hashtable_get(h,key,key_length)
-void* hashtable_get(hashtable_t* h,void* key,size_t key_length);
-void* hashtable_get_or_default(hashtable_t* h,void* key,size_t key_length,void* defaultValue);
-off_t hashtable_get_from_file(FILE* file,void* key,size_t key_length);
-off_t hashtable_get_from_mapped(mapped_t* mapped,void* key,size_t key_length);
+void* hashtable_get(hashtable_t* h,const void* key,size_t key_length);
+void* hashtable_get_or_default(hashtable_t* h,const void* key,size_t key_length,void* defaultValue);
+off_t hashtable_get_from_file(FILE* file,const void* key,size_t key_length);
+off_t hashtable_get_from_mapped(mapped_t* mapped,const void* key,size_t key_length);
 void _hashtable_freeelement(void* data, void* metadata);
 void hashtable_free(hashtable_t* h);
 void hashtable_optimize(hashtable_t* h);//, int (*compare)(const void* a,const void* b))
 size_t hashtable_memory_size(hashtable_t* h);
 void hashtable_stats(hashtable_t* h,FILE* stream);
 int hashtable_save(hashtable_t* h,FILE* file, off_t (*saveValue)(hashelement_t* element,void* metadata), void* metadata);
-hashtable_t* hashtable_load(FILE* file, void* (*loadValue)(void* key,size_t key_length,off_t location,void* metadata),void* metadata);
+hashtable_t* hashtable_load(FILE* file, void* (*loadValue)(const void* key,size_t key_length,off_t location,void* metadata),void* metadata);
 void hashtable_apply(hashtable_t* h, void (*callback)(hashelement_t* element, void* metadata),void* metadata);
 vector_t* hashtable_elements(hashtable_t* h);
 vector_t* hashtable_keys(hashtable_t* h);

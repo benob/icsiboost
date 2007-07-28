@@ -454,7 +454,7 @@ void array_apply(array_t* input, void (*callback)(void* data, void* metadata),vo
 	arrayelement_t* element=input->first;
 	while(element)
 	{
-		callback(element->data,metadata);
+		callback(&element->data,metadata);
 		element=element->next;
 	}
 }

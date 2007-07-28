@@ -16,6 +16,7 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 
 #include "string.h"
+#include "utils/hashtable.h"
 
 #include <math.h>
 
@@ -205,58 +206,205 @@ string_t* string_join_cstr(const char* separator, array_t* parts)
 	return output;
 }
 
-void regexstatus_free(regexstatus_t* status)
+typedef struct regexstatus {
+	regex_t expression;
+	//vector_t* groups;
+	size_t start;
+	size_t end;
+	int flags;
+	const char* replacement;
+	vector_t* between_replacements;
+	vector_t* replacement_mapping;
+} regexstatus_t;
+
+#define REGEX_FLAG_NONE 0
+#define REGEX_FLAG_GLOBAL (1<<0)
+#define REGEX_FLAG_CONTINUE (1<<1)
+#define REGEX_FLAG_CASE_INSENSITIVE (1<<2)
+#define REGEX_FLAG_MULTILINE (1<<3)
+#define REGEX_FLAG_ONCE (1<<4)
+#define REGEX_FLAG_NOSUB (1<<5)
+#define REGEX_FLAG_REVERSE (1<<6)
+
+void _regexstatus_free(regexstatus_t* status)
 {
+	if(status->replacement_mapping!=NULL)vector_free(status->replacement_mapping);
+	if(status->between_replacements!=NULL)string_vector_free(status->between_replacements);
 	regfree(&status->expression);
-	vector_free(status->groups);
 	FREE(status);
 }
 
-regexstatus_t* string_match(string_t* input, const char* pattern, int flags, regexstatus_t* status)
+#ifdef STRING_REGEX_USE_CACHE
+hashtable_t* _regex_cache=NULL;
+#endif
+
+regexstatus_t* _regexstatus_new(const char* pattern, const char* replacement, const char* flags_string)
 {
-	if(status==NULL)
+	regexstatus_t* status=NULL;
+	int flags=REGEX_FLAG_NONE;
+	if(flags_string!=NULL)
 	{
-		status=(regexstatus_t*)MALLOC(sizeof(regexstatus_t));
-		if(regcomp(&status->expression,pattern,flags|REG_EXTENDED)!=0) warn("compiling regex /%s/",pattern);
+		const char* current_flag=flags_string;
+		while(current_flag && *current_flag!='\0')
+		{
+			switch(*current_flag) {
+				case 'g': flags|=REGEX_FLAG_GLOBAL;break;
+				case 'c': flags|=REGEX_FLAG_CONTINUE;break;
+				case 'i': flags|=REGEX_FLAG_CASE_INSENSITIVE;break;
+				case 'm': flags|=REGEX_FLAG_MULTILINE;break;
+				case 'o': flags|=REGEX_FLAG_ONCE;break;
+				case 'n': flags|=REGEX_FLAG_NOSUB;break;
+				case '!': flags|=REGEX_FLAG_REVERSE;break;
+				default:
+					if(replacement==NULL) {
+						die("invlid flag \"%c\", in m/%s/%s",*current_flag, pattern, flags_string);
+					} else {
+						die("invlid flag \"%c\", in s/%s/%s/%s",*current_flag, pattern, replacement, flags_string);
+					}
+					break;
+			}
+			current_flag++;
+		}
+	}
+#ifdef STRING_REGEX_USE_CACHE
+	if((flags & REGEX_FLAG_ONCE) == 0)
+	{
+		if(_regex_cache==NULL)
+		{
+			_regex_cache=hashtable_new();
+		}
+		else
+		{
+			status=hashtable_get(_regex_cache, pattern, strlen(pattern));
+		}
+	}
+#endif
+	if(status==NULL || ((status->flags & (REGEX_FLAG_CASE_INSENSITIVE|REGEX_FLAG_MULTILINE|REGEX_FLAG_NOSUB)) != 
+			(flags & (REGEX_FLAG_CASE_INSENSITIVE|REGEX_FLAG_MULTILINE|REGEX_FLAG_NOSUB))))
+	{
+		if(status==NULL)
+		{
+			status=MALLOC(sizeof(regexstatus_t));
+			memset(status,0,sizeof(regexstatus_t));
+#ifdef STRING_REGEX_USE_CACHE
+			if((flags & REGEX_FLAG_ONCE) == 0)hashtable_set(_regex_cache, pattern, strlen(pattern), status);
+#endif
+		}
+		else
+		{
+			regfree(&status->expression);
+		}
+		status->flags=flags;
+		int regcomp_result=regcomp(&status->expression, pattern, 
+			(flags & REGEX_FLAG_CASE_INSENSITIVE ? REG_ICASE : 0) |
+			(flags & REGEX_FLAG_MULTILINE ? REG_NEWLINE : 0) |
+			(flags & REGEX_FLAG_NOSUB ? REG_NOSUB : 0) | 
+			REG_EXTENDED);
+		if(regcomp_result!=0)
+		{
+			char buffer[1024];
+			regerror(regcomp_result, &status->expression, buffer, 1024);
+			if(replacement==NULL)
+			{ 
+				die("compiling regex m/%s/%s, %s", pattern, flags_string, buffer);
+			} else {
+				die("compiling regex s/%s/%s/%s, %s", pattern, replacement, flags_string, buffer);
+			}
+		}
 		status->expression.re_nsub++;
-		status->groups=vector_new(status->expression.re_nsub);
-		status->groups->length=status->expression.re_nsub;
+	}
+	if(replacement!=NULL && (status->replacement==NULL || strcmp(status->replacement,replacement)!=0))
+	{
+		status->replacement=replacement;
+		status->between_replacements=vector_new(16);
+		status->replacement_mapping=_vector_new(16, sizeof(int32_t));
+		const char* current=replacement;
+		const char* last_current=replacement;
+		while(*current!='\0')
+		{
+			if(*current=='$' && *(current+1)>='1' && *(current+1)<='9')
+			{
+				if(current!=replacement && *(current-1)=='\\')
+				{
+					vector_push(status->between_replacements, string_new_from_to(last_current, 0, current-last_current-1));
+					int32_t id=-1;
+					_vector_push(status->replacement_mapping, &id);
+					last_current=current;
+				}
+				else
+				{
+					vector_push(status->between_replacements, string_new_from_to(last_current, 0, current-last_current));
+					last_current=current+2;
+					while(*last_current>='1' && *(last_current)<='9')last_current++;
+					string_t* group_id=string_new_from_to(current, 1, last_current-current);
+					int32_t id=string_to_int32(group_id);
+					if(id<1 || id>status->expression.re_nsub)warn("invalid group replacement \"$%s\", s/%s/%s/%s, %d group%s", group_id->data, 
+						pattern, replacement, flags_string, status->expression.re_nsub-1,status->expression.re_nsub-1>1?"s":"");
+					_vector_push(status->replacement_mapping, &id);
+					string_free(group_id);
+					current=last_current-1;
+				}
+			}
+			current++;
+		}
+		vector_push(status->between_replacements, string_new_from_to(last_current, 0, current-last_current));
+		vector_optimize(status->between_replacements);
+		vector_optimize(status->replacement_mapping);
+	}
+	return status;
+}
+
+vector_t* string_match(string_t* input, const char* pattern, const char* flags)
+{
+	regexstatus_t* status=_regexstatus_new(pattern, NULL, flags);
+	int regex_flags=0;
+	if(status->end!=0)regex_flags|=REG_NOTBOL;
+	regex_flags|=REG_STARTEND;
+	if((status->flags & REGEX_FLAG_CONTINUE) == 0)
+	{
 		status->start=0;
 		status->end=0;
-	} else {
-		flags|=REG_NOTBOL;
 	}
-	flags|=REG_STARTEND;
 	regmatch_t match[status->expression.re_nsub];
 	match[0].rm_so=status->end;
 	match[0].rm_eo=input->length;
-	int result=regexec(&status->expression,input->data,status->expression.re_nsub,match,flags);
-	if(result==0)
+	int result=regexec(&status->expression,input->data,status->expression.re_nsub,match,regex_flags);
+	vector_t* groups=NULL;
+	if(((result==0 && (status->flags & REGEX_FLAG_REVERSE)==0)) || (result!=0 && (status->flags & REGEX_FLAG_REVERSE)==1))
 	{
-		size_t i=0;
-		for(i=0;i<status->expression.re_nsub;i++)
+		if(status->flags & REGEX_FLAG_NOSUB)
 		{
-			vector_set(status->groups,i,string_new_from_to(input->data,match[i].rm_so,match[i].rm_eo));
+			groups=(vector_t*)1;
 		}
-		status->start=match[0].rm_so;
-		status->end=match[0].rm_eo;
-		return status;
+		else
+		{
+			groups=vector_new(status->expression.re_nsub);
+			groups->length=status->expression.re_nsub;
+			size_t i=0;
+			for(i=0;i<status->expression.re_nsub;i++)
+			{
+				vector_set(groups,i,string_new_from_to(input->data,match[i].rm_so,match[i].rm_eo));
+			}
+			status->start=match[0].rm_so;
+			status->end=match[0].rm_eo;
+		}
 	}
-	regexstatus_free(status);
-	return NULL;
+#ifdef STRING_REGEX_USE_CACHE
+	if(status->flags & REGEX_FLAG_ONCE)
+#endif
+		_regexstatus_free(status);
+	return groups;
 }
 
-array_t* string_split(const char* separator, string_t* input)
+array_t* string_split(string_t* input, const char* separator, const char* flags)
 {
 	array_t* output=array_new();
-	regex_t expression;
-	if(regcomp(&expression,separator,REG_EXTENDED)!=0) warn("compiling regex /%s/",separator);
-	expression.re_nsub++;
-	regmatch_t match[expression.re_nsub];
+	regexstatus_t* status=_regexstatus_new(separator, NULL, flags);
+	regmatch_t match[status->expression.re_nsub];
 	match[0].rm_so=0;
 	match[0].rm_eo=input->length;
 	regoff_t last_start=0;
-	while(regexec(&expression,input->data,expression.re_nsub,match,REG_STARTEND)==0)
+	while(regexec(&status->expression,input->data,status->expression.re_nsub,match,REG_STARTEND)==0)
 	{
 		if(match[0].rm_so!=0)array_push(output,string_new_from_to(input->data,last_start,match[0].rm_so));
 		last_start=match[0].rm_eo;
@@ -264,41 +412,78 @@ array_t* string_split(const char* separator, string_t* input)
 		match[0].rm_eo=input->length;
 	}
 	if(last_start!=input->length)array_push(output,string_new_from_to(input->data,last_start,input->length));
-	regfree(&expression);
+#ifdef STRING_REGEX_USE_CACHE
+	if(status->flags & REGEX_FLAG_ONCE)
+#endif
+		_regexstatus_free(status);
 	return output;
 }
 
-// WARNING: $1, $2 ... don't get replaced
-int string_replace(string_t* input, const char* pattern, string_t* replacement, int flags)
+array_t* string_array_grep(array_t* input, const char* pattern, const char* flags)
 {
-	regex_t expression;
-	if(regcomp(&expression,pattern,flags|REG_EXTENDED)!=0) warn("compiling regex /%s/",pattern);
-	expression.re_nsub++;
-	regmatch_t match[expression.re_nsub];
+	array_t* output=NULL;
+	regexstatus_t* status=_regexstatus_new(pattern, NULL, flags);
+	int i=0;
+	for(i=0;i<input->length;i++)
+	{
+		string_t* string=array_get(input,i);
+		int result=regexec(&status->expression,string->data,0,NULL,0);
+		if(string!=NULL && ((result==0 && (status->flags & REGEX_FLAG_REVERSE)==0) || (result!=0 && (status->flags & REGEX_FLAG_REVERSE)!=0)))
+		{
+			if(output==NULL)output=array_new();
+			array_push(output, string_copy(string));
+		}
+	}
+#ifdef STRING_REGEX_USE_CACHE
+	if(status->flags & REGEX_FLAG_ONCE)
+#endif
+		_regexstatus_free(status);
+	return output;
+}
+
+int string_replace(string_t* input, const char* pattern, const char* replacement, const char* flags)
+{
+	regexstatus_t* status=_regexstatus_new(pattern, replacement, flags);
+	regmatch_t match[status->expression.re_nsub];
 	match[0].rm_so=0;
 	match[0].rm_eo=input->length;
 	regoff_t last_start=0;
+	int i;
+	int matched=0;
 	array_t* output=array_new();
-	while(regexec(&expression,input->data,expression.re_nsub,match,REG_STARTEND)==0)
+	while(regexec(&status->expression,input->data,status->expression.re_nsub,match,REG_STARTEND)==0)
 	{
 		if(match[0].rm_so!=0)array_push(output,string_new_from_to(input->data,last_start,match[0].rm_so));
-		array_push(output,string_copy(replacement));
+		for(i=0; i<status->replacement_mapping->length; i++)
+		{
+			array_push(output,string_copy(vector_get(status->between_replacements, i)));
+			int32_t* id=_vector_get(status->replacement_mapping, i);
+			if(*id>0 && *id<status->expression.re_nsub)
+				array_push(output,string_new_from_to(input->data, match[*id].rm_so, match[*id].rm_eo));
+		}
+		array_push(output,string_copy(vector_get(status->between_replacements, status->between_replacements->length-1)));
 		last_start=match[0].rm_eo;
 		match[0].rm_so=match[0].rm_eo;
 		match[0].rm_eo=input->length;
+		matched=1;
+		if((status->flags & REGEX_FLAG_GLOBAL) == 0)break;
 	}
-	if(last_start!=input->length)array_push(output,string_new_from_to(input->data,last_start,input->length));
-	regfree(&expression);
-	string_t* joint_output=string_join_cstr("",output);
-	size_t i;
-	for(i=0;i<output->length;i++)string_free((string_t*)array_get(output,i));
-	array_free(output);
-	FREE(input->data);
-	input->data=joint_output->data;
-	input->length=joint_output->length;
-	input->size=joint_output->size;
-	FREE(joint_output);
-	return 1;
+	if(matched)
+	{
+		if(last_start!=input->length)array_push(output,string_new_from_to(input->data,last_start,input->length));
+		string_t* joint_output=string_join_cstr("",output);
+		FREE(input->data);
+		input->data=joint_output->data;
+		input->length=joint_output->length;
+		input->size=joint_output->size;
+		FREE(joint_output);
+	}
+	string_array_free(output);
+#ifdef STRING_REGEX_USE_CACHE
+	if(status->flags & REGEX_FLAG_ONCE)
+#endif
+		_regexstatus_free(status);
+	return matched;
 }
 
 void string_array_free(array_t* input)

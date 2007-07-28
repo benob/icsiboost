@@ -30,7 +30,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #endif
 
 #define _GNU_SOURCE // to get vasprintf
-//#define DEBUG
+#define DEBUG
 
 #include <errno.h>
 #include <string.h>
@@ -55,9 +55,13 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #define debug_level 99
 // int debug_level=99;
 
-#define debug(level,format, ...) {if(debug_level>=level)fprintf(stderr, "DEBUG %d: " format ", %s at %s:%d\n", level, ## __VA_ARGS__, errno?strerror(errno):"", __FILE__, __LINE__);}
-#define warn(format, ...) {fprintf(stderr, "WARNING: " format ", %s at %s:%d\n", ## __VA_ARGS__, errno?strerror(errno):"", __FILE__, __LINE__);}
-#define die(format, ...) {fprintf(stderr, "ERROR: " format ", %s at %s:%d\n", ## __VA_ARGS__, errno?strerror(errno):"", __FILE__, __LINE__);exit(1);}
-#define dump(format, ...) {fprintf(stderr, "ERROR: " format ", %s at %s:%d\n", ## __VA_ARGS__, errno?strerror(errno):"", __FILE__, __LINE__);{int* __killer=NULL;*__killer=1;}}
+#define debug(level,format, ...) {if(debug_level>=level)fprintf(stderr, "DEBUG %d: " format ",%s%s at %s:%d\n", level, ## __VA_ARGS__, \
+	errno?" ":"", errno?strerror(errno):"", __FILE__, __LINE__);}
+#define warn(format, ...) {fprintf(stderr, "WARNING: " format ",%s%s at %s:%d\n", ## __VA_ARGS__, \
+	errno?" ":"", errno?strerror(errno):"", __FILE__, __LINE__);}
+#define die(format, ...) {fprintf(stderr, "ERROR: " format ",%s%s at %s:%d\n", ## __VA_ARGS__, \
+	errno?" ":"", errno?strerror(errno):"", __FILE__, __LINE__);exit(1);}
+#define dump(format, ...) {fprintf(stderr, "ERROR: " format ",%s%s at %s:%d\n", ## __VA_ARGS__, \
+	errno?" ":"", errno?strerror(errno):"", __FILE__, __LINE__);{int* __killer=NULL;*__killer=1;}}
 
 #endif

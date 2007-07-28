@@ -30,7 +30,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 hashtable_t* _hashtable_key_repository=NULL;
 #endif
 
-uint32_t _hashtable_function(void* key,size_t key_length)
+uint32_t _hashtable_function(const void* key,size_t key_length)
 {
 	uint32_t hash = 0;
 	int i;
@@ -46,7 +46,7 @@ uint32_t _hashtable_function(void* key,size_t key_length)
 	return hash;
 }
 
-int _hashtable_key_equals(void* key1, size_t key1_length, void* key2, size_t key2_length)
+int _hashtable_key_equals(const void* key1, size_t key1_length, const void* key2, size_t key2_length)
 {
 	if(key1_length!=key2_length)return 0;
 	return !memcmp(key1,key2,key1_length);
@@ -71,7 +71,34 @@ hashtable_t* hashtable_new_size_collisions_factor(size_t initial_capacity, size_
 	return output;
 }
 
-void hashtable_set(hashtable_t* input, void* key, size_t key_length, void* value)
+hashtable_t* string_array_to_hashtable(array_t* input)
+{
+	hashtable_t* output=hashtable_new();
+	int i;
+	if(input->length % 2 != 0)warn("hashtable_new_from_string_array(%p), odd number of element in array (%d), last element ignored", input, input->length);
+	for(i=0; i<input->length; i+=2)
+	{
+		string_t* key=array_get(input, i);
+		string_t* value=array_get(input, i+1);
+		hashtable_set(output, key->data, key->length, string_copy(value));
+	}
+	return output;
+}
+
+array_t* string_array_from_hashtable(hashtable_t* input)
+{
+	array_t* output=array_new();
+	hashelement_t* element=hashtable_first_element(input);
+	while(element!=NULL)
+	{
+		array_push(output, string_new_from_to(element->key, 0, element->key_length));
+		array_push(output, string_copy(element->value));
+		element=hashtable_next_element(input);
+	}
+	return output;
+}
+
+void hashtable_set(hashtable_t* input, const void* key, size_t key_length, void* value)
 {
 	//fprintf(stderr,"store(%s,%p)\n",key,value);
 	uint32_t hashcode=_hashtable_function(key, key_length);
@@ -148,7 +175,7 @@ void hashtable_set(hashtable_t* input, void* key, size_t key_length, void* value
 #endif
 }
 
-void* hashtable_remove(hashtable_t* input, void* key, size_t key_length)
+void* hashtable_remove(hashtable_t* input, const void* key, size_t key_length)
 {
 	uint32_t hashcode=_hashtable_function(key, key_length);
 	uint32_t bucket=hashcode%input->size;
@@ -188,7 +215,7 @@ void* hashtable_remove(hashtable_t* input, void* key, size_t key_length)
 	return NULL;
 }
 
-void* hashtable_get(hashtable_t* input, void* key, size_t key_length)
+void* hashtable_get(hashtable_t* input, const void* key, size_t key_length)
 {
 	//fprintf(stderr,"fetch(%s)\n",key);
 	uint32_t hashcode=_hashtable_function(key, key_length);
@@ -234,14 +261,14 @@ void* hashtable_get(hashtable_t* input, void* key, size_t key_length)
 	return NULL;
 }
 
-void* hashtable_get_or_default(hashtable_t* h,void* key,size_t key_length,void* defaultValue)
+void* hashtable_get_or_default(hashtable_t* h,const void* key,size_t key_length,void* defaultValue)
 {
 	void* value=hashtable_get(h, key, key_length);
 	if(value==NULL)return defaultValue;
 	return value;
 }
 
-off_t hashtable_get_from_file(FILE* file,void* key,size_t key_length)
+off_t hashtable_get_from_file(FILE* file,const void* key,size_t key_length)
 {
 	int j;
 	int size;
@@ -288,7 +315,7 @@ off_t hashtable_get_from_file(FILE* file,void* key,size_t key_length)
 	return -1;
 }
 
-off_t hashtable_get_from_mapped(mapped_t* mapped,void* key,size_t key_length)
+off_t hashtable_get_from_mapped(mapped_t* mapped,const void* key,size_t key_length)
 {
 	int j;
 	int pointer=0;
@@ -466,7 +493,7 @@ int hashtable_save(hashtable_t* h,FILE* file, off_t (*saveValue)(hashelement_t* 
 	return 0;
 }
 
-hashtable_t* hashtable_load(FILE* file, void* (*loadValue)(void* key,size_t key_length,off_t location,void* metadata),void* metadata)
+hashtable_t* hashtable_load(FILE* file, void* (*loadValue)(const void* key,size_t key_length,off_t location,void* metadata),void* metadata)
 {
 	int i,j;
 	size_t size;

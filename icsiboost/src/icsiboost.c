@@ -775,10 +775,8 @@ vector_t* load_model(vector_t* templates, vector_t* classes, char* filename)
 	while((line=mapped_readline(input))!=NULL)
 	{
 		line_num++;
-		regexstatus_t* status=string_match(line,"^ *$",0,NULL); // skip blank lines
-		if(status)
+		if(string_match(line,"^ *$","n")) // skip blank lines
 		{
-			regexstatus_free(status);
 			string_free(line);
 			continue;
 		}
@@ -788,14 +786,14 @@ vector_t* load_model(vector_t* templates, vector_t* classes, char* filename)
 		}
 		else if(current==NULL)
 		{
-			status=string_match(line," *([^ ]+) Text:(SGRAM|THRESHOLD):([^:]+):(.*)",0,NULL);
-			if(status)
+			vector_t* groups=string_match(line," *([^ ]+) Text:(SGRAM|THRESHOLD):([^:]+):(.*)",NULL);
+			if(groups)
 			{
 				current=(weakclassifier_t*)MALLOC(sizeof(weakclassifier_t));
-				string_t* template_name=vector_get(status->groups,3);
+				string_t* template_name=vector_get(groups,3);
 				template_t* template=hashtable_get(templates_by_name, template_name->data, template_name->length);
 				if(template==NULL)die("invalid column template name \"%s\", line %d in %s", template_name->data, line_num, filename);
-				string_t* alpha=vector_get(status->groups,1);
+				string_t* alpha=vector_get(groups,1);
 				current->alpha=string_to_double(alpha);
 				if(isnan(current->alpha))die("invalid alpha value \"%s\", line %d in %s", alpha->data, line_num, filename);
 				current->template=template;
@@ -808,8 +806,8 @@ vector_t* load_model(vector_t* templates, vector_t* classes, char* filename)
 				current->c0=NULL;
 				current->c1=NULL;
 				current->c2=NULL;
-				string_t* word=vector_get(status->groups,4);
-				if(string_eq_cstr(vector_get(status->groups,2),"SGRAM"))
+				string_t* word=vector_get(groups,4);
+				if(string_eq_cstr(vector_get(groups,2),"SGRAM"))
 				{
 					current->type=CLASSIFIER_TYPE_TEXT;
 					if(template->type==FEATURE_TYPE_SET)
@@ -834,19 +832,19 @@ vector_t* load_model(vector_t* templates, vector_t* classes, char* filename)
 						current->token = tokeninfo->id;
 					}
 				}
-				else if(string_eq_cstr(vector_get(status->groups,2),"THRESHOLD"))
+				else if(string_eq_cstr(vector_get(groups,2),"THRESHOLD"))
 				{
 					current->type=CLASSIFIER_TYPE_THRESHOLD;
 				}
 				else die("invalid classifier definition \"%s\", line %d in %s", line->data, line_num, filename);
-				regexstatus_free(status);
+				string_vector_free(groups);
 			}
 			else die("invalid classifier definition \"%s\", line %d in %s", line->data, line_num, filename);
 		}
 		else if(current->c0==NULL)
 		{
 			current->c0=MALLOC(sizeof(double)*classes->length);
-			array_t* values=string_split(" ",line);
+			array_t* values=string_split(line," ",NULL);
 			if(values==NULL || values->length!=classes->length)die("invalid weight distribution \"%s\", line %d in %s",line->data,line_num,filename);
 			for(i=0; i<values->length; i++)
 			{
@@ -864,7 +862,7 @@ vector_t* load_model(vector_t* templates, vector_t* classes, char* filename)
 		else if(current->c1==NULL)
 		{
 			current->c1=MALLOC(sizeof(double)*classes->length);
-			array_t* values=string_split(" ",line);
+			array_t* values=string_split(line," ",NULL);
 			if(values==NULL || values->length!=classes->length)die("invalid weight distribution \"%s\", line %d in %s",line->data,line_num,filename);
 			for(i=0; i<values->length; i++)
 			{
@@ -877,7 +875,7 @@ vector_t* load_model(vector_t* templates, vector_t* classes, char* filename)
 		else if(current->c2==NULL)
 		{
 			current->c2=MALLOC(sizeof(double)*classes->length);
-			array_t* values=string_split(" ",line);
+			array_t* values=string_split(line," ",NULL);
 			if(values==NULL || values->length!=classes->length)die("invalid weight distribution \"%s\", line %d in %s",line->data,line_num,filename);
 			for(i=0; i<values->length; i++)
 			{
@@ -999,6 +997,7 @@ void usage(char* program_name)
 	fprintf(stderr,"  -V                      verbose mode\n");
 	fprintf(stderr,"  -C                      classification mode -- reads examples from <stdin>\n");
 	fprintf(stderr,"  -o                      long output in classification mode\n");
+	fprintf(stderr,"  --dryrun                only parse the names file and the data file to check for errors\n");
 	fprintf(stderr,"  --cutoff <freq>         ignore nominal features occuring unfrequently\n");
 	fprintf(stderr,"  --jobs <threads>        number of threaded weak learners\n");
 	fprintf(stderr,"  --do-not-pack-model     do not pack model (to get individual training steps)\n");
@@ -1040,6 +1039,7 @@ int main(int argc, char** argv)
 	int feature_count_cutoff=0;
 	int classification_mode=0;
 	int classification_output=0;
+	int dryrun_mode=0;
 	int pack_model=1;
 	string_t* model_name=NULL;
 	string_t* data_filename=NULL;
@@ -1132,6 +1132,10 @@ int main(int argc, char** argv)
 		{
 			output_weights=1;
 		}
+		else if(string_eq_cstr(arg,"--dryrun"))
+		{
+			dryrun_mode=1;
+		}
 		else usage(argv[0]);
 		string_free(arg);
 	}
@@ -1154,16 +1158,14 @@ int main(int argc, char** argv)
 	int line_num = 0;
 	while((line = mapped_readline(input)) != NULL) // should add some validity checking !!!
 	{
-		regexstatus_t* status=string_match(line,"^(\\|| *$)",0,NULL); // skip comments and blank lines
-		if(status)
+		if(string_match(line,"^(\\|| *$)","n")) // skip comments and blank lines
 		{
-			regexstatus_free(status);
 			string_free(line);
 			continue;
 		}
 		if(classes != NULL) // this line contains a template definition
 		{
-			array_t* parts = string_split("(^ +| *: *| *\\.$)", line);
+			array_t* parts = string_split(line, "(^ +| *: *| *\\.$)", NULL);
 			template_t* template = (template_t*)MALLOC(sizeof(template_t));
 			template->column = line_num-1;
 			template->name = (string_t*)array_get(parts, 0);
@@ -1187,7 +1189,7 @@ int main(int argc, char** argv)
 			else template->type = FEATURE_TYPE_SET;
 			if(template->type == FEATURE_TYPE_SET)
 			{
-				array_t* values = string_split("(^ +| *, *| *\\.$)", type);
+				array_t* values = string_split(type,"(^ +| *, *| *\\.$)", NULL);
 				if(values->length <= 1)die("invalid column definition \"%s\", line %d in %s", line->data, line_num+1, names_filename->data);
 				for(i=0; i<values->length; i++)
 				{
@@ -1213,7 +1215,7 @@ int main(int argc, char** argv)
 		}
 		else // first line contains the class definitions
 		{
-			array_t* parts = string_split("(^ +| *, *| *\\.$)", line);
+			array_t* parts = string_split(line, "(^ +| *, *| *\\.$)", NULL);
 			if(parts->length <= 1)die("invalid classes definition \"%s\", line %d in %s", line->data, line_num+1, names_filename->data);
 			classes = vector_from_array(parts);
 			array_free(parts);
@@ -1242,6 +1244,8 @@ int main(int argc, char** argv)
 		}
 		classifiers=load_model(templates,classes,model_name->data);
 		double sum_of_alpha=0;
+		int errors=0;
+		int num_examples=0;
 		for(i=0;i<classifiers->length;i++)
 		{
 			weakclassifier_t* classifier=vector_get(classifiers,i);
@@ -1250,11 +1254,20 @@ int main(int argc, char** argv)
 		string_free(model_name);
 
 		string_t* line=NULL;
+		int line_num=0;
 		while((line=string_readline(stdin))!=NULL)
 		{
-			int l;
+			line_num++;
 			string_chomp(line);
-			array_t* array_of_tokens=string_split(" *, *", line);
+			if(string_match(line,"^(\\|| *$)","n")) // skip comments and blank lines
+			{
+				string_free(line);
+				continue;
+			}
+			int l;
+			array_t* array_of_tokens=string_split(line, " *, *", NULL);
+			if(array_of_tokens->length<templates->length || array_of_tokens->length>templates->length+1)
+				die("wrong number of columns (%d), \"%s\", line %d in %s", array_of_tokens->length, line->data, line_num, "stdin");
 			double score[classes->length];
 			for(l=0; l<classes->length; l++) score[l]=0.0;
 			for(i=0; i<templates->length; i++)
@@ -1314,60 +1327,69 @@ int main(int argc, char** argv)
 				}
 			}
 			for(l=0; l<classes->length; l++)score[l]/=sum_of_alpha;
-			if(classification_output==0)
+			if(!dryrun_mode)
 			{
-				if(true_class!=NULL)
+				if(classification_output==0)
 				{
+					if(true_class!=NULL)
+					{
+						for(l=0; l<classes->length; l++)
+						{
+							string_t* class=vector_get(classes,l);
+							if(string_cmp(class,true_class)==0) fprintf(stdout,"1 ");
+							else fprintf(stdout,"0 ");
+						}
+					}
+					else
+					{
+						for(l=0; l<classes->length; l++)fprintf(stdout,"? ");
+					}
 					for(l=0; l<classes->length; l++)
 					{
-						string_t* class=vector_get(classes,l);
-						if(string_cmp(class,true_class)==0) fprintf(stdout,"1 ");
-						else fprintf(stdout,"0 ");
+						fprintf(stdout,"%.12f",score[l]);
+						if(l<classes->length-1)fprintf(stdout," ");
 					}
+					fprintf(stdout,"\n");
 				}
 				else
 				{
-					for(l=0; l<classes->length; l++)fprintf(stdout,"? ");
-				}
-				for(l=0; l<classes->length; l++)
-				{
-					fprintf(stdout,"%.12f",score[l]);
-					if(l<classes->length-1)fprintf(stdout," ");
-				}
-				fprintf(stdout,"\n");
-			}
-			else
-			{
-				fprintf(stdout,"\n\n");
-				for(i=0; i<templates->length; i++)
-				{
-					template_t* template=vector_get(templates,i);
-					string_t* token=vector_get(tokens,i);
-					fprintf(stdout,"%s: %s\n", template->name->data, token->data);
-				}
-				if(true_class!=NULL)
-				{
-					fprintf(stdout,"correct label = %s \n",true_class->data);
-					for(l=0; l<classes->length; l++)
+					fprintf(stdout,"\n\n");
+					for(i=0; i<templates->length; i++)
 					{
-						string_t* class=vector_get(classes,l);
-						fprintf(stdout,"%s%s % 5f : %s \n",string_cmp(true_class,class)==0?"*":" ",
-								(score[l]>0?">":(string_cmp(true_class,class)==0?"*":" ")),score[l],class->data);
+						template_t* template=vector_get(templates,i);
+						string_t* token=vector_get(tokens,i);
+						fprintf(stdout,"%s: %s\n", template->name->data, token->data);
 					}
-				}
-				else
-				{
-					fprintf(stdout,"correct label = ?\n");
-					for(l=0; l<classes->length; l++)
+					if(true_class!=NULL)
 					{
-						string_t* class=vector_get(classes,l);
-						fprintf(stdout,"   % 5f : %s\n", score[l],class->data);
+						fprintf(stdout,"correct label = %s \n",true_class->data);
+						for(l=0; l<classes->length; l++)
+						{
+							string_t* class=vector_get(classes,l);
+							fprintf(stdout,"%s%s % 5f : %s \n",string_cmp(true_class,class)==0?"*":" ",
+									(score[l]>0?">":(string_cmp(true_class,class)==0?"*":" ")),score[l],class->data);
+							if((score[l]<0 && string_cmp(true_class,class)==0))errors++;
+						}
+					}
+					else
+					{
+						fprintf(stdout,"correct label = ?\n");
+						for(l=0; l<classes->length; l++)
+						{
+							string_t* class=vector_get(classes,l);
+							fprintf(stdout,"   % 5f : %s\n", score[l],class->data);
+						}
 					}
 				}
 			}
 			vector_free(tokens);
 			string_array_free(array_of_tokens);
 			string_free(line);
+			num_examples++;
+		}
+		if(!dryrun_mode && classification_output!=0)
+		{
+			fprintf(stderr,"ERROR RATE: %f\n",(double)errors/(double)num_examples);
 		}
 		exit(0);
 	}
@@ -1407,6 +1429,7 @@ int main(int argc, char** argv)
 	test_examples = load_examples(data_filename->data, templates, classes, 0, 1);
 	string_free(data_filename);*/
 
+	if(dryrun_mode)exit(0);
 	// initialize the sum of weights by classes (to infer the other side of the partition in binary classifiers)
 	// sum_of_weights[b][l]
 	double **sum_of_weights=(double**)MALLOC(sizeof(double*)*2);
