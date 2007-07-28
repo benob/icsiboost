@@ -18,6 +18,8 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #ifndef __DEBUG_H__
 #define __DEBUG_H__
 
-void init_debugging(const char* program_name, const char* commands_file, unsigned int delay);
+#define DEBUG_INTERACTIVE 1
+#define DEBUG_NON_INTERACTIVE 0
+void init_debugging(const char* program_name, int interactive);
 
 #endif

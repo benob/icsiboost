@@ -63,6 +63,18 @@ void* loadValue(const void* key,size_t key_length,off_t location,void* metadata)
 	return (void*)location;
 }
 
+void test_debug2()
+{
+	debug(5,"print a message according to debug level (currently=%d)",debug_level);
+	warn("this is a simple %s","warning");
+	dump("there was no error, but I wanted to die...");
+}
+
+void test_debug1()
+{
+	test_debug2();
+}
+
 int main(int argc, char** argv)
 {
 #ifdef USE_GC
@@ -72,7 +84,7 @@ int main(int argc, char** argv)
 	fprintf(stdout,"memory used: %lu\n",(unsigned long)GC_get_heap_size());
 #endif
 //#ifdef DEBUG
-	init_debugging(argv[0],"gdb.commands",1);
+	init_debugging(argv[0],0);
 //#endif
 	int i,j;
 	fprintf(stdout,"---------- testing vectors\n");
@@ -86,12 +98,12 @@ int main(int argc, char** argv)
 		j=(int)vector_shift(vector);
 		vector_unshift(vector,(void*)j);
 	}
-	fprintf(stdout,"vector length=%d\n",vector->length);
+	fprintf(stdout,"vector length=%zd\n",vector->length);
 	vector_t* vector2=vector_copy(vector);
 	vector_append(vector,vector2);
 	vector_prepend(vector,vector2);
 	vector_fusion(vector,vector2); // will FREE vector2
-	fprintf(stdout,"vector length=%d\n",vector->length);
+	fprintf(stdout,"vector length=%zd\n",vector->length);
 	vector_remove(vector,5,8);
 	vector_remove_element(vector,23);
 	vector_insert_element(vector,13,(void*)999);
@@ -103,7 +115,7 @@ int main(int argc, char** argv)
 	vector_free(vector2);
 	vector_reverse(vector);
 	vector_sort(vector,int_comparator);
-	fprintf(stdout,"vector length=%d\n",vector->length);
+	fprintf(stdout,"vector length=%zd\n",vector->length);
 	for(i=0;i<vector->length;i++)
 	{
 		printf("%d, ",(int)vector_get(vector,i));
@@ -116,9 +128,9 @@ int main(int argc, char** argv)
 	vector_remove_duplicates(vector);
 	vector_apply(vector,print_callback,"%d ,");
 	printf("\n");
-	fprintf(stdout,"vector size=%d bytes\n",vector_memory_size(vector));
+	fprintf(stdout,"vector size=%zd bytes\n",vector_memory_size(vector));
 	vector_optimize(vector);
-	fprintf(stdout,"vector size=%d bytes\n",vector_memory_size(vector));
+	fprintf(stdout,"vector size=%zd bytes\n",vector_memory_size(vector));
 	vector_free(vector);
 
 	fprintf(stdout,"---------- testing arrays\n");
@@ -132,12 +144,12 @@ int main(int argc, char** argv)
 		j=(int)array_shift(array);
 		array_unshift(array,(void*)j);
 	}
-	fprintf(stdout,"array length=%d\n",array->length);
+	fprintf(stdout,"array length=%zd\n",array->length);
 	array_t* array2=array_copy(array);
 	array_append(array,array2);
 	array_prepend(array,array2);
 	array=array_fusion(array,array2); // will FREE array2
-	fprintf(stdout,"array length=%d\n",array->length);
+	fprintf(stdout,"array length=%zd\n",array->length);
 	array_remove(array,5,8);
 	array_remove_element(array,23);
 	array_insert_element(array,13,(void*)999);
@@ -149,7 +161,7 @@ int main(int argc, char** argv)
 	array_free(array2);
 	array_reverse(array);
 	array_sort(array,int_comparator);
-	fprintf(stdout,"array length=%d\n",array->length);
+	fprintf(stdout,"array length=%zd\n",array->length);
 	for(i=0;i<array->length;i++)
 	{
 		printf("%d, ",(int)array_get(array,i));
@@ -160,7 +172,7 @@ int main(int argc, char** argv)
 	array_remove_duplicates(array);
 	array_apply(array,print_callback,"%d ,");
 	printf("\n");
-	fprintf(stdout,"array size=%d bytes\n",array_memory_size(array));
+	fprintf(stdout,"array size=%zd bytes\n",array_memory_size(array));
 
 	fprintf(stdout,"---------- testing conversions array <-> vector\n");
 	vector=vector_from_array(array);
@@ -352,8 +364,6 @@ int main(int argc, char** argv)
 	fprintf(stdout,"memory used: %lu\n",(unsigned long)GC_get_heap_size());
 #endif
 	fprintf(stdout,"---------- testing debug\n");
-	debug(5,"print a message according to debug level (currently=%d)",debug_level);
-	warn("this is a simple %s","warning");
-	dump("there was no error, but I wanted to die...");
+	test_debug1();
 	return 0;
 }

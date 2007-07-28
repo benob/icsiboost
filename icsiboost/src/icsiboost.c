@@ -23,12 +23,12 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 //#define USE_FLOATS
 
 #include "utils/common.h"
+#include "utils/debug.h"
 #include "utils/vector.h"
 #include "utils/string.h"
 #include "utils/hashtable.h"
 #include "utils/mapped.h"
 #include "utils/array.h"
-//#include "version.h"
 
 #ifdef USE_THREADS
 #include "utils/threads.h"
@@ -232,8 +232,8 @@ weakclassifier_t* train_text_stump(double min_objective, template_t* template, v
 	}
 	for(l=0;l<num_classes;l++) // free memory
 	{
-		free(weight[0][l]);
-		free(weight[1][l]);
+		FREE(weight[0][l]);
+		FREE(weight[1][l]);
 	}
 	//tokeninfo_t* info=vector_get(template->tokens,classifier->token);
 	//fprintf(stdout,"DEBUG: column=%d token=%s obj=%f %s\n",column,info->key,classifier->objective,template->name->data);
@@ -1032,6 +1032,9 @@ void print_version(char* program_name)
 
 int main(int argc, char** argv)
 {
+#ifdef DEBUG
+	init_debugging(argv[0],DEBUG_NON_INTERACTIVE);
+#endif
 #ifdef USE_GC
 	GC_INIT();
 #endif
@@ -1267,7 +1270,7 @@ int main(int argc, char** argv)
 			int l;
 			array_t* array_of_tokens=string_split(line, " *, *", NULL);
 			if(array_of_tokens->length<templates->length || array_of_tokens->length>templates->length+1)
-				die("wrong number of columns (%d), \"%s\", line %d in %s", array_of_tokens->length, line->data, line_num, "stdin");
+				die("wrong number of columns (%zd), \"%s\", line %d in %s", array_of_tokens->length, line->data, line_num, "stdin");
 			double score[classes->length];
 			for(l=0; l<classes->length; l++) score[l]=0.0;
 			for(i=0; i<templates->length; i++)
