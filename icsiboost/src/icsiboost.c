@@ -666,7 +666,7 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 								hashtable_set(template->dictionary, word, strlen(word), tokeninfo);
 								vector_push(template->tokens, tokeninfo);
 							}
-							else die("value \"%s\" was not described in names file, line %d, column %d (%s) in %s", word, line_num, i, template->name->data, filename);
+							else die("value \"%s\" was not described in the .names file, line %d, column %d (%s) in %s", word, line_num, i, template->name->data, filename);
 						}
 						//vector_set_int32(example->features,i,tokeninfo->id);
 						if(hashtable_get(bag_of_words, word, strlen(word))==NULL)

@@ -84,7 +84,7 @@ int main(int argc, char** argv)
 	fprintf(stdout,"memory used: %lu\n",(unsigned long)GC_get_heap_size());
 #endif
 //#ifdef DEBUG
-	init_debugging(argv[0],0);
+	init_debugging(argv[0],1);
 //#endif
 	int i,j;
 	fprintf(stdout,"---------- testing vectors\n");

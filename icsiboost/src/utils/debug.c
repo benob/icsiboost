@@ -5,8 +5,8 @@
 #include <unistd.h>
 #include <sys/wait.h>
 
-#include "utils/debug.h"
 #include "utils/common.h"
+#include "utils/debug.h"
 
 unsigned int _debug_delay=1;
 int _debug_interactive=0;
@@ -27,13 +27,11 @@ void _sigsegv_handler(int id)
 			{
 				warn("could not enable non-interactive stack trace");
 			}
-			{
-				close(0);
-				dup2(filedes[0],0);
-				char* commands="set prompt\ncontinue\nwhere\n";
-				write(filedes[1],commands,strlen(commands));
-				close(filedes[1]);
-			}
+			close(0);
+			dup2(filedes[0],0);
+			char* commands="set prompt\ncontinue\nwhere\nquit\ny\n";
+			write(filedes[1],commands,strlen(commands));
+			//				close(filedes[1]);
 		}
 		dup2(2,1);
 		char pid[1024];
@@ -49,7 +47,7 @@ void _sigsegv_handler(int id)
 void init_debugging(const char* program_name, int interactive)
 {
 	_debug_program_name=program_name;
-	_debug_delay=1;
+	//_debug_delay=1;
 	_debug_interactive=interactive;
 	signal(SIGSEGV,_sigsegv_handler);
 	signal(SIGBUS,_sigsegv_handler);

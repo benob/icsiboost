@@ -47,6 +47,7 @@ void string_free(string_t* input);
 string_t* string_substr(string_t* input,size_t from,size_t to);
 string_t* string_reverse(string_t* input);
 string_t* string_chomp(string_t* input);
+array_t* string_array_chomp(array_t* input);
 string_t* string_join(string_t* separator, array_t* parts);
 string_t* string_join_cstr(const char* separator, array_t* parts);
 vector_t* string_match(string_t* input, const char* pattern, const char* flags);

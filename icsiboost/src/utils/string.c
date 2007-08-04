@@ -165,6 +165,14 @@ string_t* string_chomp(string_t* input)
 	return input;
 }
 
+array_t* string_array_chomp(array_t* input)
+{
+	int i=0;
+	for(i=0; i<input->length; i++)
+		string_chomp((string_t*)array_get(input, i));
+	return input;
+}
+
 string_t* string_join(string_t* separator, array_t* parts)
 {
 	if(parts->first==NULL)return string_new("");
