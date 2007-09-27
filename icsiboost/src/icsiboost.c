@@ -628,7 +628,7 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 				length++;
 			}
 			if(current >= end_of_file) die("unexpected end of file, line %d, column %d (%s) in %s", line_num, i, template->name->data, filename);
-			while(*(token+length-1) == ' ' && length > 0) length--; // strip spaces as end
+			while(*(token+length-1) == ' ' && length > 0) length--; // strip spaces at end
 			char field[length+1];
 			memcpy(field, token, length);
 			field[length] = '\0';
@@ -636,7 +636,7 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 			{
 				float value=NAN;// unknwon is represented by Not-A-Number (NAN)
 				char* error_location=NULL;
-				if(strcmp(field,"?")) // if not unknown value
+				if(length==0 || strcmp(field,"?")) // if not unknown value
 				{
 					value = strtof(field, &error_location);
 					if(error_location==NULL || *error_location!='\0')
@@ -646,7 +646,7 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 			}
 			else if(template->type == FEATURE_TYPE_TEXT || template->type==FEATURE_TYPE_SET)
 			{
-				if(strcmp(field,"?")) // if not unknwon value
+				if(length==0 || strcmp(field,"?")) // if not unknwon value
 				{
 					char* word=NULL;
 					hashtable_t* bag_of_words=hashtable_new();
@@ -685,7 +685,7 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 			}
 			else
 			{
-				//vector_set_int32(example->features,i,0); // unsupported feature type: everything is unknown
+				//=> FEATURE_TYPE_IGNORE
 			}
 			current++;
 		}
@@ -1005,6 +1005,8 @@ void usage(char* program_name)
 	fprintf(stderr,"  --model <model>         save/load the model to/from this file instead of <stem>.shyp\n");
 	fprintf(stderr,"  --train <file>          bypass the <stem>.data filename to specify training examples\n");
 	fprintf(stderr,"  --test <file>           output additional error rate from an other file during training (can be used multiple times, not implemented)\n");
+	fprintf(stderr,"  --names <file>          use this column description file instead of <stem>.names\n");
+	fprintf(stderr,"  --ignore <columns>      ignore a comma separated list of columns (synonym with \"ignore\" in name file)\n");
 	exit(1);
 }
 
@@ -1046,6 +1048,8 @@ int main(int argc, char** argv)
 	int pack_model=1;
 	string_t* model_name=NULL;
 	string_t* data_filename=NULL;
+	string_t* names_filename=NULL;
+	array_t* ignore_columns=NULL;
 #ifdef USE_THREADS
 	int number_of_workers=1;
 #endif
@@ -1102,6 +1106,19 @@ int main(int argc, char** argv)
 			if(arg==NULL)die("value needed for -S");
 			stem=string_copy(arg);
 		}
+		else if(string_eq_cstr(arg,"--names"))
+		{
+			string_free(arg);
+			arg=(string_t*)array_shift(args);
+			if(arg==NULL)die("file name expected after --names");
+			names_filename=string_copy(arg);
+		}
+		else if(string_eq_cstr(arg,"--ignore"))
+		{
+			string_free(arg);
+			arg=(string_t*)array_shift(args);
+			ignore_columns=string_split(arg,",",NULL);
+		}
 		else if(string_eq_cstr(arg,"--version"))
 		{
 			print_version(argv[0]);
@@ -1152,8 +1169,11 @@ int main(int argc, char** argv)
 	vector_t* classes = NULL;
 
 	// read names file
-	string_t* names_filename = string_copy(stem);
-	string_append_cstr(names_filename, ".names");
+	if(names_filename==NULL)
+	{
+		names_filename = string_copy(stem);
+		string_append_cstr(names_filename, ".names");
+	}
 	mapped_t* input = mapped_load_readonly(names_filename->data);
 	hashtable_t* templates_by_name=hashtable_new();
 	if(input == NULL) die("can't load \"%s\"", names_filename->data);
@@ -1231,6 +1251,20 @@ int main(int argc, char** argv)
 		}
 		string_free(line);
 		line_num++;
+	}
+	if(ignore_columns!=NULL)
+	{
+		for(i=0; i<ignore_columns->length; i++)
+		{
+			string_t* column=(string_t*)array_get(ignore_columns, i);
+			template_t* template=hashtable_exists(templates_by_name, column->data, column->length);
+			if(template!=NULL)
+			{
+				template->type=FEATURE_TYPE_IGNORE;
+				if(verbose>0) { warn("ignoring column \"%s\"", column->data); }
+			}
+		}
+		string_array_free(ignore_columns);
 	}
 	vector_optimize(templates);
 	mapped_free(input);
@@ -1317,6 +1351,7 @@ int main(int argc, char** argv)
 							for(l=0; l<classes->length; l++) score[l]+=classifier->alpha*classifier->c2[l];
 					}
 				}
+				// FEATURE_TYPE_IGNORE
 			}
 			string_t* true_class=NULL;
 			vector_t* tokens=array_to_vector(array_of_tokens);
@@ -1544,6 +1579,7 @@ int main(int argc, char** argv)
 			{
 				current=train_text_stump(min_objective, template, examples, sum_of_weights, classes->length);
 			}
+			// else => FEATURE_TYPE_IGNORE
 			if(current==NULL)continue;
 			if(current->objective-min_objective<-1e-11)
 			{

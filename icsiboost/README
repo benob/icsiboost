@@ -1,4 +1,6 @@
-NOTE: this file was last updated with r22
+NOTE: this file was last updated with r35
+
+check updates at: http://code.google.com/p/icsiboost
 
 Boosting is a meta-learning approach that aims at combining an ensemble of weak classifiers to form a strong classifier. Adaptive Boosting (Adaboost) implements this idea as a greedy search for a linear combination of classifiers by overweighting the examples that are misclassified by each classifier. icsiboost implements Adaboost over stumps (one-level decision trees) on discrete and continuous attributes (words and real values). See http://en.wikipedia.org/wiki/AdaBoost and the papers by Y. Freund and R. Schapire for more details [1]. This approach is one of most efficient and simple to combine continuous and nominal values. Our implementation is aimed at allowing training from millions of examples by hundreds of features in a reasonable time/memory.
 
@@ -26,6 +28,9 @@ USAGE: ./icsiboost [options] -S <stem>
   --model <model>         save/load the model to/from this file instead of <stem>.shyp
   --train <file>          bypass the <stem>.data filename to specify training examples
   --test <file>           output additional error rate from an other file during training (can be used multiple times, not implemented)
+  --names <file>          use this column description file instead of <stem>.names
+  --ignore <columns>      ignore a comma separated list of columns (synonym with "ignore" in name file)
+
 
 The input data is defined in a format similar to the UCI repository (http://www.ics.uci.edu/~mlearn/MLRepository.html). You will have to remove blank lines, comments and add a period at the end of each lines. The data must contain a <stem>.data file with training examples, a <stem>.names file describing the classes/features and may contain a .dev and .test file that will be used for error rate computation (this last feature has been deactivated).
 
