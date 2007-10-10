@@ -180,13 +180,12 @@ string_t* string_join(string_t* separator, array_t* parts)
 	// compute length
 	size_t length=((string_t*)current->data)->length;
 	current=current->next;
-	do
+	while(current)
 	{
 		length+=separator->length;
 		length+=((string_t*)current->data)->length;
 		current=current->next;
 	}
-	while(current);
 	current=parts->first;
 	string_t* output=string_copy((string_t*)current->data);
 	string_resize(output,length+1);
@@ -346,7 +345,7 @@ regexstatus_t* _regexstatus_new(const char* pattern, const char* replacement, co
 					while(*last_current>='1' && *(last_current)<='9')last_current++;
 					string_t* group_id=string_new_from_to(current, 1, last_current-current);
 					int32_t id=string_to_int32(group_id);
-					if(id<1 || id>status->expression.re_nsub)warn("invalid group replacement \"$%s\", s/%s/%s/%s, %d group%s", group_id->data, 
+					if(id<1 || id>status->expression.re_nsub)warn("invalid group replacement \"$%s\", s/%s/%s/%s, %ld group%s", group_id->data, 
 						pattern, replacement, flags_string, status->expression.re_nsub-1,status->expression.re_nsub-1>1?"s":"");
 					_vector_push(status->replacement_mapping, &id);
 					string_free(group_id);

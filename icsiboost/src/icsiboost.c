@@ -581,11 +581,69 @@ double compute_classification_error(vector_t* classifiers, vector_t* examples, d
 	return error/examples->length;
 }
 
+#define TEXT_EXPERT_NGRAM 1
+#define TEXT_EXPERT_SGRAM 2
+#define TEXT_EXPERT_FGRAM 3
+// warning: text experts SGRAM and FGRAM do not output anything if the window is larger than the actual number of words
+array_t* text_expert(int type, int length, string_t* text)
+{
+	array_t* words=string_split(text, " ", NULL);
+	array_t* output=array_new();
+	int i,j;
+	if(type==TEXT_EXPERT_NGRAM)
+	{
+		for(i=0; i<words->length; i++)
+		{
+			array_t* gram=array_new();
+			for(j=0; j<length && i+j<words->length ;j++)
+			{
+				array_push(gram, array_get(words, i+j));
+				array_push(output, string_join_cstr("@", gram));
+			}
+			array_free(gram);
+		}
+	}
+	else if(type==TEXT_EXPERT_FGRAM)
+	{
+		for(i=0; i+length-1<words->length; i++)
+		{
+			array_t* gram=array_new();
+			for(j=0; j<length && i+j<words->length ;j++)
+			{
+				array_push(gram, array_get(words, i+j));
+			}
+			array_push(output, string_join_cstr("@", gram));
+			array_free(gram);
+		}
+	}
+	else if(type==TEXT_EXPERT_SGRAM)
+	{
+		for(i=0; i+length-1<words->length; i++)
+		{
+			array_t* gram=array_new();
+			array_push(gram, array_get(words, i));
+			for(j=1; j<length && i+j<words->length ;j++)
+			{
+				array_push(gram, array_get(words, i+j));
+				array_push(output, string_join_cstr("@", gram));
+				array_pop(gram);
+			}
+			array_free(gram);
+		}
+	}
+	else
+	{
+		die("unimplented text expert");
+	}
+	string_array_free(words);
+	return output;
+}
+
 /* load a data file
   if it is a test or dev file (in_test=1) then do not update dictionaries
   note: real test files without a class in the end will fail (this is not classification mode)
 */
-vector_t* load_examples(const char* filename, vector_t* templates, vector_t* classes, int feature_count_cutoff, int in_test)
+vector_t* load_examples(const char* filename, vector_t* templates, vector_t* classes, int feature_count_cutoff, int in_test, int text_expert_type, int text_expert_length)
 {
 	int i,j;
 	mapped_t* input = mapped_load_readonly(filename);
@@ -648,34 +706,38 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 			{
 				if(length==0 || strcmp(field,"?")) // if not unknwon value
 				{
-					char* word=NULL;
 					hashtable_t* bag_of_words=hashtable_new();
-					for(word=strtok(field, " "); word != NULL; word=strtok(NULL," "))
+					string_t* field_string=string_new(field);
+					array_t* experts=text_expert(text_expert_type, text_expert_length, field_string);
+					for(j=0; j<experts->length ; j++)
 					{
-						tokeninfo_t* tokeninfo = hashtable_get(template->dictionary, word, strlen(word));
+						string_t* expert = array_get(experts, j);
+						tokeninfo_t* tokeninfo = hashtable_get(template->dictionary, expert->data, expert->length);
 						if(tokeninfo == NULL)
 						{
 							if(in_test)tokeninfo=vector_get(template->tokens,0); // default to the unknown token
-							else if(template->type == FEATURE_TYPE_TEXT) // update the dictionary with the new token
+							else if(template->type == FEATURE_TYPE_TEXT || template->type == FEATURE_TYPE_SET) // update the dictionary with the new token
 							{
 								tokeninfo = (tokeninfo_t*)MALLOC(sizeof(tokeninfo_t));
 								tokeninfo->id = template->tokens->length;
-								tokeninfo->key = strdup(word);
+								tokeninfo->key = strdup(expert->data);
 								tokeninfo->count=0;
 								tokeninfo->examples=vector_new_int32_t(16);
-								hashtable_set(template->dictionary, word, strlen(word), tokeninfo);
+								hashtable_set(template->dictionary, expert->data, expert->length, tokeninfo);
 								vector_push(template->tokens, tokeninfo);
 							}
-							else die("value \"%s\" was not described in the .names file, line %d, column %d (%s) in %s", word, line_num, i, template->name->data, filename);
+							else die("value \"%s\" was not described in the .names file, line %d, column %d (%s) in %s", expert->data, line_num, i, template->name->data, filename);
 						}
 						//vector_set_int32(example->features,i,tokeninfo->id);
-						if(hashtable_get(bag_of_words, word, strlen(word))==NULL)
+						if(hashtable_get(bag_of_words, expert->data, expert->length)==NULL)
 						{
-							hashtable_set(bag_of_words, word, strlen(word), word);
+							hashtable_set(bag_of_words, expert->data, expert->length, expert->data);
 							tokeninfo->count++;
 							vector_push_int32_t(tokeninfo->examples,(int32_t)examples->length); // inverted index
 						}
 					}
+					string_array_free(experts);
+					string_free(field_string);
 					hashtable_free(bag_of_words);
 				}
 				else
@@ -723,6 +785,7 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 					tokeninfo->id=j;
 					if(tokeninfo->count<feature_count_cutoff)
 					{
+						if(verbose)fprintf(stderr, "CUTOFF: \"%s\" %zd < %d\n", tokeninfo->key, tokeninfo->count, feature_count_cutoff);
 						hashtable_remove(template->dictionary, tokeninfo->key, strlen(tokeninfo->key));
 						if(tokeninfo->examples!=NULL)vector_free(tokeninfo->examples);
 						FREE(tokeninfo->key);
@@ -750,7 +813,7 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 			example->score[j]=0.0;
 		}
 	}
-	//if(verbose)fprintf(stdout,"EXAMPLES: %s %zd\n",filename, examples->length);
+	if(verbose)fprintf(stdout,"EXAMPLES: %s %zd\n",filename, examples->length);
 	mapped_free(input);
 	return examples;
 }
@@ -898,7 +961,7 @@ vector_t* load_model(vector_t* templates, vector_t* classes, char* filename)
 		else die("invalid classifier definition \"%s\", line %d in %s", line->data, line_num, filename);
 		string_free(line);
 	}
-	//if(verbose)fprintf(stdout,"LOADED_CLASSIFIERS %zd\n",classifiers->length);
+	if(verbose)fprintf(stdout,"LOADED_CLASSIFIERS %zd\n",classifiers->length);
 	mapped_free(input);
 	hashtable_free(templates_by_name);
 	for(i=0; i<templates->length; i++)
@@ -997,8 +1060,10 @@ void usage(char* program_name)
 	fprintf(stderr,"  -V                      verbose mode\n");
 	fprintf(stderr,"  -C                      classification mode -- reads examples from <stdin>\n");
 	fprintf(stderr,"  -o                      long output in classification mode\n");
+	fprintf(stderr,"  -N <text_expert>        choose a text expert between fgram, ngram and sgram\n");
+	fprintf(stderr,"  -W <ngram_length>       specify window length of text expert\n");
 	fprintf(stderr,"  --dryrun                only parse the names file and the data file to check for errors\n");
-	fprintf(stderr,"  --cutoff <freq>         ignore nominal features occuring unfrequently\n");
+	fprintf(stderr,"  --cutoff <freq>         ignore nominal features occuring unfrequently (shorten training time)\n");
 	fprintf(stderr,"  --jobs <threads>        number of threaded weak learners\n");
 	fprintf(stderr,"  --do-not-pack-model     do not pack model (to get individual training steps)\n");
 	fprintf(stderr,"  --output-weights        output training examples weights at each iteration\n");
@@ -1006,7 +1071,7 @@ void usage(char* program_name)
 	fprintf(stderr,"  --train <file>          bypass the <stem>.data filename to specify training examples\n");
 	fprintf(stderr,"  --test <file>           output additional error rate from an other file during training (can be used multiple times, not implemented)\n");
 	fprintf(stderr,"  --names <file>          use this column description file instead of <stem>.names\n");
-	fprintf(stderr,"  --ignore <columns>      ignore a comma separated list of columns (synonym with \"ignore\" in name file)\n");
+	fprintf(stderr,"  --ignore <columns>      ignore a comma separated list of columns (synonym with \"ignore\" in names file)\n");
 	exit(1);
 }
 
@@ -1046,6 +1111,8 @@ int main(int argc, char** argv)
 	int classification_output=0;
 	int dryrun_mode=0;
 	int pack_model=1;
+	int text_expert_type=TEXT_EXPERT_NGRAM;
+	int text_expert_length=1;
 	string_t* model_name=NULL;
 	string_t* data_filename=NULL;
 	string_t* names_filename=NULL;
@@ -1156,6 +1223,35 @@ int main(int argc, char** argv)
 		{
 			dryrun_mode=1;
 		}
+		else if(string_eq_cstr(arg,"-N"))
+		{
+			string_free(arg);
+			arg=array_shift(args);
+			if(arg==NULL)
+			{
+				die("not enough parameters for argument \"-N\"");
+			}
+			else if(string_eq_cstr(arg,"sgram"))
+				text_expert_type=TEXT_EXPERT_SGRAM;
+			else if(string_eq_cstr(arg,"fgram"))
+				text_expert_type=TEXT_EXPERT_FGRAM;
+			else if(string_eq_cstr(arg,"ngram"))
+				text_expert_type=TEXT_EXPERT_NGRAM;
+			else
+			{
+				die("invalid text expert type \"%s\"", arg->data);
+			}
+		}
+		else if(string_eq_cstr(arg, "-W"))
+		{
+			string_free(arg);
+			arg=array_shift(args);
+			text_expert_length=string_to_int32(arg);
+			if(!text_expert_length>0)
+			{
+				die("invalid window length \"%s\"",arg->data);
+			}
+		}
 		else usage(argv[0]);
 		string_free(arg);
 	}
@@ -1234,7 +1330,7 @@ int main(int argc, char** argv)
 			hashtable_set(templates_by_name, template->name->data, template->name->length, template);
 			string_free(type);
 			array_free(parts);
-			//if(verbose)fprintf(stdout,"TEMPLATE: %d %s %d\n",template->column,template->name->data,template->type);
+			if(verbose)fprintf(stdout,"TEMPLATE: %d %s %d\n",template->column,template->name->data,template->type);
 		}
 		else // first line contains the class definitions
 		{
@@ -1242,12 +1338,12 @@ int main(int argc, char** argv)
 			if(parts->length <= 1)die("invalid classes definition \"%s\", line %d in %s", line->data, line_num+1, names_filename->data);
 			classes = vector_from_array(parts);
 			array_free(parts);
-			/*if(verbose)
+			if(verbose)
 			{
 				fprintf(stdout,"CLASSES:");
 				for(i=0;i<classes->length;i++)fprintf(stdout," %s",((string_t*)vector_get(classes,i))->data);
 				fprintf(stdout,"\n");
-			}*/
+			}
 		}
 		string_free(line);
 		line_num++;
@@ -1316,13 +1412,16 @@ int main(int argc, char** argv)
 					hashtable_t* subtokens=hashtable_new();
 					if(string_cmp_cstr(token,"?")!=0)
 					{
-						char* subtoken=NULL;
-						for(subtoken=strtok(token->data, " "); subtoken != NULL; subtoken=strtok(NULL, " "))
+						int j;
+						array_t* experts=text_expert(text_expert_type, text_expert_length, token);
+						for(j=0; j<experts->length; j++)
 						{
-							tokeninfo_t* tokeninfo=hashtable_get(template->dictionary, subtoken, strlen(subtoken));
+							string_t* expert=array_get(experts, j);
+							tokeninfo_t* tokeninfo=hashtable_get(template->dictionary, expert->data, expert->length);
 							if(tokeninfo!=NULL)
 								hashtable_set(subtokens, &tokeninfo->id, sizeof(tokeninfo->id), tokeninfo);
 						}
+						string_array_free(experts);
 					}
 					int j;
 					for(j=0; j<template->classifiers->length; j++)
@@ -1438,7 +1537,7 @@ int main(int argc, char** argv)
 		data_filename = string_copy(stem);
 		string_append_cstr(data_filename, ".data");
 	}
-	vector_t* examples = load_examples(data_filename->data, templates, classes, feature_count_cutoff, 0);
+	vector_t* examples = load_examples(data_filename->data, templates, classes, feature_count_cutoff, 0, text_expert_type, text_expert_length);
 	string_free(data_filename);
 
 	// generate a simple random sequence of example ids for sampleing

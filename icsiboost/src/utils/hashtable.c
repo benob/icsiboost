@@ -75,7 +75,7 @@ hashtable_t* string_array_to_hashtable(array_t* input)
 {
 	hashtable_t* output=hashtable_new();
 	int i;
-	if(input->length % 2 != 0)warn("hashtable_new_from_string_array(%p), odd number of element in array (%d), last element ignored", input, input->length);
+	if(input->length % 2 != 0)warn("hashtable_new_from_string_array(%p), odd number of element in array (%zd), last element ignored", input, input->length);
 	for(i=0; i<input->length; i+=2)
 	{
 		string_t* key=array_get(input, i);
