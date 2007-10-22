@@ -664,6 +664,10 @@ double compute_classification_error(vector_t* classifiers, vector_t* examples, d
 array_t* text_expert(int type, int length, string_t* text)
 {
 	array_t* words=string_split(text, " ", NULL);
+	if(length==1 || words->length==1)
+	{
+		return words;
+	}
 	array_t* output=array_new();
 	int i,j;
 	if(type==TEXT_EXPERT_NGRAM)
@@ -674,7 +678,7 @@ array_t* text_expert(int type, int length, string_t* text)
 			for(j=0; j<length && i+j<words->length ;j++)
 			{
 				array_push(gram, array_get(words, i+j));
-				array_push(output, string_join_cstr("@", gram));
+				array_push(output, string_join_cstr("#", gram));
 			}
 			array_free(gram);
 		}
@@ -688,20 +692,21 @@ array_t* text_expert(int type, int length, string_t* text)
 			{
 				array_push(gram, array_get(words, i+j));
 			}
-			array_push(output, string_join_cstr("@", gram));
+			array_push(output, string_join_cstr("#", gram));
 			array_free(gram);
 		}
 	}
-	else if(type==TEXT_EXPERT_SGRAM)
+	else if(type==TEXT_EXPERT_SGRAM) // different results than boostexter
 	{
-		for(i=0; i+length-1<words->length; i++)
+		for(i=0; i<words->length; i++)
 		{
 			array_t* gram=array_new();
 			array_push(gram, array_get(words, i));
+			array_push(output, string_copy(array_get(words, i)));
 			for(j=1; j<length && i+j<words->length ;j++)
 			{
 				array_push(gram, array_get(words, i+j));
-				array_push(output, string_join_cstr("@", gram));
+				array_push(output, string_join_cstr("#", gram));
 				array_pop(gram);
 			}
 			array_free(gram);
@@ -1183,6 +1188,8 @@ void usage(char* program_name)
 	//fprintf(stderr,"  --test <file>           output additional error rate from an other file during training (can be used multiple times, not implemented)\n");
 	fprintf(stderr,"  --names <file>          use this column description file instead of <stem>.names\n");
 	fprintf(stderr,"  --ignore <columns>      ignore a comma separated list of columns (synonym with \"ignore\" in names file)\n");
+	fprintf(stderr,"  --ignore-regex <regex>  ignore columns that match a given regex\n");
+	fprintf(stderr,"  --interruptible         save model after each iteration in case of failure/interruption\n");
 	fprintf(stderr,"  --optimal-iterations    output the model at the iteration that minimizes dev error\n");
 	exit(1);
 }
@@ -1226,10 +1233,12 @@ int main(int argc, char** argv)
 	int text_expert_type=TEXT_EXPERT_NGRAM;
 	int text_expert_length=1;
 	int optimal_iterations=0;
+	int save_model_at_each_iteration=0;
 	string_t* model_name=NULL;
 	string_t* data_filename=NULL;
 	string_t* names_filename=NULL;
 	array_t* ignore_columns=NULL;
+	string_t* ignore_regex=NULL;
 #ifdef USE_THREADS
 	int number_of_workers=1;
 #endif
@@ -1279,6 +1288,10 @@ int main(int argc, char** argv)
 		{
 			verbose=1;
 		}
+		else if(string_eq_cstr(arg,"--interruptible"))
+		{
+			save_model_at_each_iteration=1;
+		}
 		else if(string_eq_cstr(arg,"-S") && stem==NULL)
 		{
 			string_free(arg);
@@ -1298,6 +1311,12 @@ int main(int argc, char** argv)
 			string_free(arg);
 			arg=(string_t*)array_shift(args);
 			ignore_columns=string_split(arg,",",NULL);
+		}
+		else if(string_eq_cstr(arg,"--ignore-regex"))
+		{
+			string_free(arg);
+			arg=(string_t*)array_shift(args);
+			ignore_regex=string_copy(arg);
 		}
 		else if(string_eq_cstr(arg,"--version"))
 		{
@@ -1478,6 +1497,19 @@ int main(int argc, char** argv)
 			}
 		}
 		string_array_free(ignore_columns);
+	}
+	if(ignore_regex!=NULL)
+	{
+		for(i=0; i<templates->length; i++)
+		{
+			template_t* template=vector_get(templates, i);
+			if(string_match(template->name, ignore_regex->data, "n"))
+			{
+				template->type=FEATURE_TYPE_IGNORE;
+				if(verbose>0) { warn("ignoring column \"%s\"", template->name->data); }
+			}
+		}
+		string_free(ignore_regex);
 	}
 	vector_optimize(templates);
 	mapped_free(input);
@@ -1683,6 +1715,12 @@ int main(int argc, char** argv)
 	test_examples = load_examples(data_filename->data, templates, classes, 0, 1, text_expert_type, text_expert_length);
 	string_free(data_filename);
 
+	if(model_name==NULL)
+	{
+		model_name = string_copy(stem);
+		string_append_cstr(model_name, ".shyp");
+	}
+
 	if(dryrun_mode)exit(0);
 	// initialize the sum of weights by classes (to infer the other side of the partition in binary classifiers)
 	// sum_of_weights[b][l]
@@ -1863,13 +1901,9 @@ int main(int argc, char** argv)
 		fprintf(stdout,"rnd %4d: wh-err= %.6f  th-err= %.6f  test= %7f  train= %7f\n",iteration+1,classifier->objective,theorical_error,test_error,error);
 		//fprintf(stdout,"rnd %4d: wh-err= %.6f  th-err= %.6f  dev= %.7f  test= %.7f  train= %.7f\n",iteration+1,classifier->objective,theorical_error,dev_error,test_error,error);
 		// unlike boostexter, C0 is always unk, C1 below or absent, C2 above or present
+		if(save_model_at_each_iteration) save_model(classifiers, classes, model_name->data,0 , 0);
 	}
 
-	if(model_name==NULL)
-	{
-		model_name = string_copy(stem);
-		string_append_cstr(model_name, ".shyp");
-	}
 	save_model(classifiers, classes, model_name->data,pack_model, optimal_iterations);
 	if(optimal_iterations!=0)
 	{
