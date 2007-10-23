@@ -661,7 +661,7 @@ double compute_classification_error(vector_t* classifiers, vector_t* examples, d
 #define TEXT_EXPERT_SGRAM 2
 #define TEXT_EXPERT_FGRAM 3
 // warning: text experts SGRAM and FGRAM do not output anything if the window is larger than the actual number of words
-array_t* text_expert(int type, int length, string_t* text)
+array_t* text_expert(int type, int length, int no_unk_ngrams, string_t* text)
 {
 	array_t* words=string_split(text, " ", NULL);
 	if(length==1 || words->length==1)
@@ -717,6 +717,14 @@ array_t* text_expert(int type, int length, string_t* text)
 		die("unimplented text expert");
 	}
 	string_array_free(words);
+	if(no_unk_ngrams)
+	{
+		array_t* no_unk=string_array_grep(output, "(^|#)unk(#|$)", "!");
+		string_array_free(output);
+		if(no_unk == NULL)
+			return array_new();
+		return no_unk;
+	}
 	return output;
 }
 
@@ -724,7 +732,7 @@ array_t* text_expert(int type, int length, string_t* text)
   if it is a test or dev file (in_test=1) then do not update dictionaries
   note: real test files without a class in the end will fail (this is not classification mode)
 */
-vector_t* load_examples(const char* filename, vector_t* templates, vector_t* classes, int feature_count_cutoff, int in_test, int text_expert_type, int text_expert_length)
+vector_t* load_examples(const char* filename, vector_t* templates, vector_t* classes, int feature_count_cutoff, int in_test, int text_expert_type, int text_expert_length, int no_unk_ngrams)
 {
 	int i,j;
 	mapped_t* input = mapped_load_readonly(filename);
@@ -799,7 +807,7 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 					if(in_test)test_example->discrete_features[template->column]=vector_new_int32_t(16);
 					hashtable_t* bag_of_words=hashtable_new();
 					string_t* field_string=string_new(field);
-					array_t* experts=text_expert(text_expert_type, text_expert_length, field_string);
+					array_t* experts=text_expert(text_expert_type, text_expert_length, no_unk_ngrams, field_string);
 					for(j=0; j<experts->length ; j++)
 					{
 						string_t* expert = array_get(experts, j);
@@ -1180,6 +1188,7 @@ void usage(char* program_name)
 	fprintf(stderr,"  -W <ngram_length>       specify window length of text expert\n");
 	fprintf(stderr,"  --dryrun                only parse the names file and the data file to check for errors\n");
 	fprintf(stderr,"  --cutoff <freq>         ignore nominal features occuring unfrequently (shorten training time)\n");
+	fprintf(stderr,"  --no-unk-ngrams         ignore ngrams that contain the \"unk\" token\n");
 	fprintf(stderr,"  --jobs <threads>        number of threaded weak learners\n");
 	fprintf(stderr,"  --do-not-pack-model     do not pack model (to get individual training steps)\n");
 	fprintf(stderr,"  --output-weights        output training examples weights at each iteration\n");
@@ -1234,6 +1243,7 @@ int main(int argc, char** argv)
 	int text_expert_length=1;
 	int optimal_iterations=0;
 	int save_model_at_each_iteration=0;
+	int no_unk_ngrams=0;
 	string_t* model_name=NULL;
 	string_t* data_filename=NULL;
 	string_t* names_filename=NULL;
@@ -1322,6 +1332,10 @@ int main(int argc, char** argv)
 		{
 			print_version(argv[0]);
 			exit(0);
+		}
+		else if(string_eq_cstr(arg,"--no-unk-ngrams"))
+		{
+			no_unk_ngrams=1;
 		}
 		else if(string_eq_cstr(arg,"-C"))
 		{
@@ -1562,7 +1576,7 @@ int main(int argc, char** argv)
 					if(string_cmp_cstr(token,"?")!=0)
 					{
 						int j;
-						array_t* experts=text_expert(text_expert_type, text_expert_length, token);
+						array_t* experts=text_expert(text_expert_type, text_expert_length, no_unk_ngrams, token);
 						for(j=0; j<experts->length; j++)
 						{
 							string_t* expert=array_get(experts, j);
@@ -1686,7 +1700,7 @@ int main(int argc, char** argv)
 		data_filename = string_copy(stem);
 		string_append_cstr(data_filename, ".data");
 	}
-	vector_t* examples = load_examples(data_filename->data, templates, classes, feature_count_cutoff, 0, text_expert_type, text_expert_length);
+	vector_t* examples = load_examples(data_filename->data, templates, classes, feature_count_cutoff, 0, text_expert_type, text_expert_length, no_unk_ngrams);
 	string_free(data_filename);
 
 	// generate a simple random sequence of example ids for sampleing
@@ -1707,12 +1721,12 @@ int main(int argc, char** argv)
 
 	data_filename = string_copy(stem);
 	string_append_cstr(data_filename, ".dev");
-	dev_examples = load_examples(data_filename->data, templates, classes, 0, 1, text_expert_type, text_expert_length);
+	dev_examples = load_examples(data_filename->data, templates, classes, 0, 1, text_expert_type, text_expert_length, no_unk_ngrams);
 	string_free(data_filename);
 
 	data_filename = string_copy(stem);
 	string_append_cstr(data_filename, ".test");
-	test_examples = load_examples(data_filename->data, templates, classes, 0, 1, text_expert_type, text_expert_length);
+	test_examples = load_examples(data_filename->data, templates, classes, 0, 1, text_expert_type, text_expert_length, no_unk_ngrams);
 	string_free(data_filename);
 
 	if(model_name==NULL)
