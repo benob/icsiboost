@@ -44,6 +44,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #ifdef USE_GC
 #include "gc.h"
 #define MALLOC(s) GC_MALLOC(s)
+//#define NEW(s) (s*)MALLOC(sizeof(s))
 #define REALLOC(p,s) GC_REALLOC(p,s)
 #define FREE(p)
 #else
