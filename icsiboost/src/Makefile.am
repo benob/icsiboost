@@ -27,10 +27,10 @@ classifier = examples.c examples.h
 bin_PROGRAMS = icsiboost perceptron
 check_PROGRAMS = utils_test
 icsiboost_SOURCES = icsiboost.c $(utils)
-icsiboost_LDADD  = -lm -lpthread
+icsiboost_LDADD  = -lm -lpthread -lz
 perceptron_SOURCES = perceptron.c $(utils) $(classifier)
-perceptron_LDADD  = -lm -lpthread
+perceptron_LDADD  = -lm -lpthread -lz
 utils_test_SOURCES = utils_test.c $(utils)
-utils_test_LDADD  = -lm
+utils_test_LDADD  = -lm -lz
 
 EXTRA_DIST = test_uci.sh

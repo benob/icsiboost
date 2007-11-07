@@ -17,7 +17,6 @@ example_t* example_new(string_t* line)
 	while(tokens->length>0)
 	{
 		current=array_shift(tokens);
-		//fprintf(stdout,"%d [%s]\n",example->features->length, current->data);
 		array_t* parts=string_split(current, ":", NULL);
 		feature_t* feature=MALLOC(sizeof(feature_t));
 		if(parts==NULL || parts->length!=2)die("reading example \"%s\"", line->data);

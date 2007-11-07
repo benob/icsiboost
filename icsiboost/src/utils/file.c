@@ -7,6 +7,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <zlib.h>
 
 int file_test(const char* name, const char* flags)
 {
@@ -87,7 +88,7 @@ array_t* file_readlines(const char* filename)
 {
 	FILE* file_pointer=NULL;
 	if(strcmp(filename,"-")==0) file_pointer=stdin;
-	else fopen("r",filename);
+	else file_pointer=fopen(filename,"r");
 	if(file_pointer==NULL)
 	{
 		warn("file_readlines(\"%s\") failed", filename);
@@ -99,6 +100,48 @@ array_t* file_readlines(const char* filename)
 	{
 		array_push(output, line);
 	}
+	fclose(file_pointer);
+	return output;
+}
+
+int file_writelines(const char* filename, array_t* lines)
+{
+	FILE* file_pointer=NULL;
+	if(strcmp(filename,"-")==0) file_pointer=stdout;
+	else file_pointer=fopen(filename,"w");
+	if(file_pointer==NULL)
+	{
+		warn("file_writelines(\"%s\", %p) failed", filename, lines);
+		return 0;
+	}
+	int i;
+	for(i=0; i<lines->length; i++)
+	{
+		string_t* line=array_get(lines, i);
+		fprintf(file_pointer,"%s", line->data);
+	}
+	if(file_pointer!=stdout)fclose(file_pointer);
+	return 1;
+}
+
+array_t* file_gz_readlines(const char* filename)
+{
+	gzFile* file_pointer=NULL;
+	if(strcmp(filename,"-")==0) file_pointer=gzdopen(0,"r");
+	else file_pointer=gzopen(filename,"r");
+	if(file_pointer==NULL)
+	{
+		warn("file_readlines(\"%s\") failed", filename);
+		return NULL;
+	}
+	array_t* output=array_new();
+	char buffer[4096];
+	while((gzgets(file_pointer, buffer, 4095))!=NULL)
+	{
+		string_t* line=string_new(buffer);
+		array_push(output, line);
+	}
+	gzclose(file_pointer);
 	return output;
 }
 

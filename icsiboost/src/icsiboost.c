@@ -1101,12 +1101,12 @@ void save_model(vector_t* classifiers, vector_t* classes, char* filename, int pa
 	if(output==NULL)die("could not output model in \"%s\"",filename);
 	int i;
 	int num_classifiers=classifiers->length;
-	if(pack_model)
+	if(pack_model && optimal_iterations==0)
 	{
 		hashtable_t* packed_classifiers=hashtable_new();
 		for(i=0; i<classifiers->length; i++)
 		{
-			if(optimal_iterations!=0 && i>optimal_iterations+1)break;
+			//if(optimal_iterations!=0 && i>optimal_iterations+1)break;
 			weakclassifier_t* classifier=vector_get(classifiers, i);
 			string_t* identifier=string_sprintf("%d:%f:%d",classifier->column, classifier->threshold, classifier->token);
 			weakclassifier_t* previous_classifier=hashtable_get(packed_classifiers, identifier->data, identifier->length);
@@ -1876,10 +1876,19 @@ int main(int argc, char** argv)
 		double error=compute_classification_error(classifiers, examples, sum_of_weights, classes->length); // compute error rate and update weights
 		double dev_error=NAN;
 		if(dev_examples!=NULL)dev_error = compute_test_error(classifiers, dev_examples, classes->length); // compute error rate on dev
-		double test_error=NAN;
-		if(test_examples!=NULL)
+		if(dev_examples!=NULL)
 		{
-			test_error = compute_test_error(classifiers, test_examples, classes->length); // compute error rate on test
+			dev_error = compute_test_error(classifiers, dev_examples, classes->length); // compute error rate on test
+			if(optimal_iterations!=0 && dev_error<minimum_test_error)
+			{
+				minimum_test_error=dev_error;
+				optimal_iterations=iteration+1;
+			}
+		}
+		double test_error=NAN;
+		if(test_examples!=NULL) test_error = compute_test_error(classifiers, test_examples, classes->length); // compute error rate on test
+		if(dev_examples==NULL && test_examples!=NULL)
+		{
 			if(optimal_iterations!=0 && test_error<minimum_test_error)
 			{
 				minimum_test_error=test_error;
@@ -1912,10 +1921,10 @@ int main(int argc, char** argv)
 			}
 		}
 		theorical_error*=classifier->objective;
-		fprintf(stdout,"rnd %4d: wh-err= %.6f  th-err= %.6f  test= %7f  train= %7f\n",iteration+1,classifier->objective,theorical_error,test_error,error);
-		//fprintf(stdout,"rnd %4d: wh-err= %.6f  th-err= %.6f  dev= %.7f  test= %.7f  train= %.7f\n",iteration+1,classifier->objective,theorical_error,dev_error,test_error,error);
+		//fprintf(stdout,"rnd %4d: wh-err= %.6f  th-err= %.6f  test= %7f  train= %7f\n",iteration+1,classifier->objective,theorical_error,test_error,error);
+		fprintf(stdout,"rnd %d: wh-err= %f th-err= %f dev= %f test= %f train= %f\n",iteration+1,classifier->objective,theorical_error,dev_error,test_error,error);
 		// unlike boostexter, C0 is always unk, C1 below or absent, C2 above or present
-		if(save_model_at_each_iteration) save_model(classifiers, classes, model_name->data,0 , 0);
+		if(save_model_at_each_iteration) save_model(classifiers, classes, model_name->data, 0, 0);
 	}
 
 	save_model(classifiers, classes, model_name->data,pack_model, optimal_iterations);
