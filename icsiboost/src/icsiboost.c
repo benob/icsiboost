@@ -119,13 +119,15 @@ typedef struct template { // a column definition
 
 typedef struct example { // an instance
 	//vector_t* features;            // vector of (int or float according to templates)
-	int class;
+	int32_t* classes;
+	int num_classes;
 	double* weight;                // example weight by class
 	double* score;                 // example score by class, updated iteratively
 } example_t;
 
-typedef struct test_examples { // a test instance (not very memory efficicent)
-	int class;
+typedef struct test_example { // a test instance (not very memory efficicent)
+	int32_t* classes;
+	int num_classes;
 	double* score;
 	float* continuous_features;
 	vector_t** discrete_features;
@@ -161,8 +163,37 @@ int output_scores=0;
 
 //int *random_sequence;
 
-#define y_l(x,y) (x->class==y?1.0:-1.0)    // y_l() from the paper
-#define b(x,y) (x->class==y?1:0)           // b() from the paper (binary class match)
+//#define y_l(x,y) (x->class[0]==y?1.0:-1.0)    // y_l() from the paper
+inline double y_l(example_t* example, int label)
+{
+	int i;
+	for(i=0; i<example->num_classes; i++)
+	{
+		if(example->classes[i] == label)return 1.0;
+	}
+	return -1.0;
+}
+
+//#define b(x,y) (x->class[0]==y?1:0)           // b() from the paper (binary class match)
+inline int b(example_t* example, int label)
+{
+	int i;
+	for(i=0; i<example->num_classes; i++)
+	{
+		if(example->classes[i] == label)return 1;
+	}
+	return 0;
+}
+
+inline int b_test(test_example_t* example, int label)
+{
+	int i;
+	for(i=0; i<example->num_classes; i++)
+	{
+		if(example->classes[i] == label)return 1;
+	}
+	return 0;
+}
 
 weakclassifier_t* train_text_stump(double min_objective, template_t* template, vector_t* examples, double** sum_of_weights, int num_classes)
 {
@@ -268,10 +299,10 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 		int32_t index=0;
 		for(index=0;index<examples_vector->length;index++)ordered[index]=index;
 		//for(i=0;i<examples->length && i<4;i++)fprintf(stdout,"%d %f\n",i,vector_get_float(((example_t*)vector_get(examples,i))->features,column));
-		int local_comparator(const void* a, const void* b)
+		int local_comparator(const void* _a, const void* _b)
 		{
-			int32_t aa=*(int32_t*)a;
-			int32_t bb=*(int32_t*)b;
+			int32_t aa=*(int32_t*)_a;
+			int32_t bb=*(int32_t*)_b;
 			float aa_value=values[aa];
 			float bb_value=values[bb];
 			//float aa_value=vector_get_float(template->values,(size_t)aa);
@@ -522,19 +553,14 @@ double compute_test_error(vector_t* classifiers, vector_t* examples, int num_cla
 					example->score[l]+=classifier->alpha*classifier->c1[l];
 			}
 		}
-		double max=-1;
-		int argmax=0;
+		int erroneous_example = 0;
 		for(l=0;l<num_classes;l++) // selected class = class with highest score
 		{
-			if(example->score[l]>max)
-			{
-				max=example->score[l];
-				argmax=l;
-			}
+			if(example->score[l]>0.0 && !b_test(example,l)) erroneous_example = 1;
 		}
-		if(!b(example,argmax))error++; // error if the class is not the real class
+		if(erroneous_example == 1) error++;
 	}
-	return error/examples->length;
+	return error/(examples->length);
 }
 
 double compute_classification_error(vector_t* classifiers, vector_t* examples, double** sum_of_weights, int num_classes)
@@ -611,18 +637,13 @@ double compute_classification_error(vector_t* classifiers, vector_t* examples, d
 	for(i=0;i<examples->length;i++)
 	{
 		example_t* example=(example_t*)vector_get(examples,i);
-		double max=-1;
-		int argmax=0;
+		int erroneous_example = 0;
 		for(l=0;l<num_classes;l++) // selected class = class with highest score
 		{
 			normalization+=example->weight[l]; // update Z() normalization (not the same Z as in optimization)
-			if(example->score[l]>max)
-			{
-				max=example->score[l];
-				argmax=l;
-			}
+			if(example->score[l]>0.0 && !b(example,l)) erroneous_example = 1;
 		}
-		if(!b(example,argmax))error++; // error if the class is not the real class
+		if(erroneous_example == 1) error++;
 	}
 	if(sum_of_weights!=NULL)
 	{
@@ -654,7 +675,7 @@ double compute_classification_error(vector_t* classifiers, vector_t* examples, d
 		}
 		//fprintf(stdout,"norm=%.12f min=%.12f max=%.12f\n",normalization,min_weight,max_weight);
 	}
-	return error/examples->length;
+	return error/(examples->length);
 }
 
 #define TEXT_EXPERT_NGRAM 1
@@ -728,11 +749,188 @@ array_t* text_expert(int type, int length, int no_unk_ngrams, string_t* text)
 	return output;
 }
 
+vector_t* load_examples_multilabel(const char* filename, vector_t* templates, vector_t* classes, 
+	int feature_count_cutoff, int in_test, int text_expert_type, int text_expert_length, int no_unk_ngrams)
+{
+	FILE* fp=stdin;
+	if(strcmp(filename,"-")!=0)
+	{
+		fp=fopen(filename,"r");
+		if(fp == NULL)
+		{
+			warn("can't load \"%s\"", filename);
+			return NULL;
+		}
+	}
+	string_t* line;
+	vector_t* examples = vector_new(16);
+	int line_num=0;
+	int i,j;
+	while((line=string_readline(fp))!=NULL)
+	{
+		if(line_num % 1000 == 0)fprintf(stderr, "\r%s: %d", filename, line_num);
+		line_num++;
+		string_chomp(line);
+		if(string_match(line,"^(\\|| *$)","n")) // skip comments and blank lines
+		{
+			string_free(line);
+			continue;
+		}
+		array_t* array_of_tokens=string_split(line, " *, *", NULL);
+		if(array_of_tokens->length != templates->length+1)
+			die("wrong number of columns (%zd), \"%s\", line %d in %s", array_of_tokens->length, line->data, line_num, filename);
+		test_example_t* test_example=NULL;
+		example_t* example=NULL;
+		if(in_test)
+		{
+			test_example=MALLOC(sizeof(test_example_t));
+			test_example->score=MALLOC(sizeof(double)*classes->length);
+			test_example->continuous_features=MALLOC(sizeof(float)*templates->length);
+			memset(test_example->continuous_features,0,sizeof(float)*templates->length);
+			test_example->discrete_features=MALLOC(sizeof(vector_t*)*templates->length);
+			memset(test_example->discrete_features,0,sizeof(vector_t*)*templates->length);
+			test_example->classes=NULL;
+			test_example->num_classes=0;
+		}
+		else
+		{
+			example = MALLOC(sizeof(example_t));
+			memset(example, 0, sizeof(example_t));
+		}
+		for(i=0; i<templates->length; i++)
+		{
+			template_t* template=vector_get(templates, i);
+			string_t* token=array_get(array_of_tokens, i);
+			//fprintf(stderr,"%d %d >>> %s\n", line_num, i, token->data);
+			if(template->type == FEATURE_TYPE_CONTINUOUS)
+			{
+				float value=NAN;// unknwon is represented by Not-A-Number (NAN)
+				char* error_location=NULL;
+				if(token->length==0 || strcmp(token->data,"?")) // if not unknown value
+				{
+					value = strtof(token->data, &error_location);
+					if(error_location==NULL || *error_location!='\0')
+						die("could not convert \"%s\" to a number, line %d, column %d (%s) in %s", token->data, line_num, i, template->name->data, filename);
+				}
+				if(!in_test) vector_push_float(template->values,value);
+				else test_example->continuous_features[template->column]=value;
+			}
+			else if(template->type == FEATURE_TYPE_TEXT || template->type==FEATURE_TYPE_SET)
+			{
+				if(token->length==0 || strcmp(token->data,"?")) // if not unknwon value
+				{
+					if(in_test)test_example->discrete_features[template->column]=vector_new_int32_t(16);
+					hashtable_t* bag_of_words=hashtable_new();
+					string_t* field_string=string_new(token->data);
+					array_t* experts=text_expert(text_expert_type, text_expert_length, no_unk_ngrams, field_string);
+					for(j=0; j<experts->length ; j++)
+					{
+						string_t* expert = array_get(experts, j);
+						tokeninfo_t* tokeninfo = hashtable_get(template->dictionary, expert->data, expert->length);
+						if(tokeninfo == NULL && !in_test)
+						{
+							if(in_test)tokeninfo=vector_get(template->tokens,0); // default to the unknown token
+							else if(template->type == FEATURE_TYPE_TEXT || template->type == FEATURE_TYPE_SET) // update the dictionary with the new token
+							{
+								tokeninfo = (tokeninfo_t*)MALLOC(sizeof(tokeninfo_t));
+								tokeninfo->id = template->tokens->length;
+								tokeninfo->key = strdup(expert->data);
+								tokeninfo->count=0;
+								tokeninfo->examples=vector_new_int32_t(16);
+								hashtable_set(template->dictionary, expert->data, expert->length, tokeninfo);
+								vector_push(template->tokens, tokeninfo);
+							}
+							else die("value \"%s\" was not described in the .names file, line %d, column %d (%s) in %s", expert->data, line_num, i, template->name->data, filename);
+						}
+						//vector_set_int32(example->features,i,tokeninfo->id);
+						if(tokeninfo!=NULL && hashtable_get(bag_of_words, expert->data, expert->length)==NULL)
+						{
+							hashtable_set(bag_of_words, expert->data, expert->length, expert->data);
+							if(!in_test)
+							{
+								tokeninfo->count++;
+								vector_push_int32_t(tokeninfo->examples,(int32_t)examples->length); // inverted index
+							}
+							else
+							{
+								vector_push_int32_t(test_example->discrete_features[template->column], tokeninfo->id);
+							}
+						}
+					}
+					string_array_free(experts);
+					string_free(field_string);
+					hashtable_free(bag_of_words);
+					if(in_test)vector_optimize(test_example->discrete_features[template->column]);
+				}
+				else
+				{
+					//vector_set_int32(example->features,i,0); // unknown token is 0 (aka NULL)
+				}
+				// FEATURE_TYPE_IGNORE
+			}
+		}
+		string_t* last_token = array_get(array_of_tokens, templates->length);
+		array_t* array_of_labels = string_split(last_token, "(  *|\\.$)", NULL);
+		if(array_of_labels == NULL || array_of_labels->length<1)
+			die("wrong class definition \"%s\", line %d in %s", last_token->data, line_num, filename);
+		if(in_test)
+		{
+			test_example->num_classes = array_of_labels->length;
+			test_example->classes = MALLOC(sizeof(int32_t) * test_example->num_classes);
+		}
+		else
+		{
+			example->num_classes = array_of_labels->length;
+			example->classes = MALLOC(sizeof(int32_t) * example->num_classes);
+		}
+		for(i=0; i<array_of_labels->length; i++)
+		{
+			string_t* class = array_get(array_of_labels, i);
+			for(j=0; j<classes->length; j++)
+			{
+				string_t* other = vector_get(classes, j);
+				if(string_eq(class, other))
+				{
+					if(in_test) test_example->classes[i] = j;
+					else example->classes[i] = j;
+					break;
+				}
+			}
+			if(j == classes->length) die("undeclared class \"%s\", line %d in %s", class->data, line_num, filename);
+		}
+		string_array_free(array_of_labels);
+		string_array_free(array_of_tokens);
+		string_free(line);
+		if(in_test) vector_push(examples, test_example);
+		else vector_push(examples, example);
+	}
+	// initalize weights and score
+	if(!in_test)
+	{
+		for(i=0;i<examples->length;i++)
+		{
+			example_t* example=(example_t*)vector_get(examples,i);
+			//fprintf(stdout,"%d %d %p\n",i,(int)vector_get(example->features,0), example->weight);
+			example->weight=(double*)MALLOC(classes->length*sizeof(double));
+			example->score=(double*)MALLOC(classes->length*sizeof(double));
+			for(j=0;j<classes->length;j++)
+			{
+				example->weight[j]=1.0/(classes->length*examples->length); // 1/(m*k)
+				example->score[j]=0.0;
+			}
+		}
+	}
+	vector_optimize(examples);
+	fclose(fp);
+	fprintf(stderr, "\r%s: %d\n", filename, line_num);
+	return examples;
+}
+
 /* load a data file
   if it is a test or dev file (in_test=1) then do not update dictionaries
   note: real test files without a class in the end will fail (this is not classification mode)
 */
-vector_t* load_examples(const char* filename, vector_t* templates, vector_t* classes, int feature_count_cutoff, int in_test, int text_expert_type, int text_expert_length, int no_unk_ngrams)
+/*vector_t* load_examples(const char* filename, vector_t* templates, vector_t* classes, int feature_count_cutoff, int in_test, int text_expert_type, int text_expert_length, int no_unk_ngrams)
 {
 	int i,j;
 	mapped_t* input = mapped_load_readonly(filename);
@@ -938,7 +1136,7 @@ vector_t* load_examples(const char* filename, vector_t* templates, vector_t* cla
 	if(verbose)fprintf(stdout,"EXAMPLES: %s %zd\n",filename, examples->length);
 	mapped_free(input);
 	return examples;
-}
+}*/
 
 vector_t* load_model(vector_t* templates, vector_t* classes, char* filename)
 {
@@ -1541,6 +1739,10 @@ int main(int argc, char** argv)
 		classifiers=load_model(templates,classes,model_name->data);
 		double sum_of_alpha=0;
 		int errors=0;
+		int by_class_errors[classes->length];
+		int by_class_totals[classes->length];
+		memset(by_class_errors, 0, sizeof(int) * classes->length);
+		memset(by_class_totals, 0, sizeof(int) * classes->length);
 		int num_examples=0;
 		for(i=0;i<classifiers->length;i++)
 		{
@@ -1615,7 +1817,7 @@ int main(int argc, char** argv)
 				}
 				// FEATURE_TYPE_IGNORE
 			}
-			string_t* true_class=NULL;
+			/*string_t* true_class=NULL;
 			vector_t* tokens=array_to_vector(array_of_tokens);
 			if(tokens->length > templates->length)
 			{
@@ -1625,30 +1827,47 @@ int main(int argc, char** argv)
 					true_class->data[true_class->length-1]='\0';
 					true_class->length--;
 				}
+			}*/
+			int example_classes[classes->length];
+			memset(example_classes, 0, sizeof(int) * classes->length);
+			if(array_of_tokens->length > templates->length)
+			{
+				string_t* last_token = array_get(array_of_tokens, templates->length);
+				array_t* array_of_labels = string_split(last_token, "(  *|\\.$)", NULL);
+				int j;
+				for(j=0; j<array_of_labels->length; j++)
+				{
+					string_t* class = array_get(array_of_labels, j);
+					for(l=0; l<classes->length; l++)
+					{
+						string_t* other = vector_get(classes, l);
+						if(string_eq(other, class))
+						{
+							example_classes[l] = 1;
+							break;
+						}
+					}
+					if(l == classes->length) die("unknown class label \"%s\", line %d in %s", class->data, line_num, "stdin");
+				}
+				string_array_free(array_of_labels);
 			}
 			for(l=0; l<classes->length; l++)score[l]/=sum_of_alpha;
 			if(!dryrun_mode)
 			{
 				if(classification_output==0)
 				{
-					if(true_class!=NULL)
+					for(l=0; l<classes->length; l++)
 					{
-						for(l=0; l<classes->length; l++)
-						{
-							string_t* class=vector_get(classes,l);
-							if(string_cmp(class,true_class)==0) fprintf(stdout,"1 ");
-							else fprintf(stdout,"0 ");
-						}
+						fprintf(stdout, "%d ", example_classes[l]);
 					}
-					else
-					{
-						for(l=0; l<classes->length; l++)fprintf(stdout,"? ");
-					}
+					int erroneous_example = 0;
 					for(l=0; l<classes->length; l++)
 					{
 						fprintf(stdout,"%.12f",score[l]);
 						if(l<classes->length-1)fprintf(stdout," ");
+						if((score[l]<0 && example_classes[l]==1))erroneous_example = 1;
 					}
+					if(erroneous_example == 1) errors++;
 					fprintf(stdout,"\n");
 				}
 				else
@@ -1657,20 +1876,37 @@ int main(int argc, char** argv)
 					for(i=0; i<templates->length; i++)
 					{
 						template_t* template=vector_get(templates,i);
-						string_t* token=vector_get(tokens,i);
+						string_t* token=array_get(array_of_tokens,i);
 						fprintf(stdout,"%s: %s\n", template->name->data, token->data);
 					}
-					if(true_class!=NULL)
-					{
-						fprintf(stdout,"correct label = %s \n",true_class->data);
+					/*if(true_class!=NULL)
+					{*/
+						fprintf(stdout,"correct label = ");
+						for(l=0; l<classes->length; l++)
+						{
+							if(example_classes[l]==1)
+							{
+								string_t* class = vector_get(classes, l);
+								fprintf(stdout,"%s ", class->data);
+							}
+						}
+						fprintf(stdout,"\n");
+						int erroneous_example = 0;
 						for(l=0; l<classes->length; l++)
 						{
 							string_t* class=vector_get(classes,l);
-							fprintf(stdout,"%s%s % 5f : %s \n",string_cmp(true_class,class)==0?"*":" ",
-									(score[l]>0?">":(string_cmp(true_class,class)==0?"*":" ")),score[l],class->data);
-							if((score[l]<0 && string_cmp(true_class,class)==0))errors++;
+							fprintf(stdout,"%s%s % 5f : %s \n", example_classes[l]==1?"*":" ",
+									(score[l]>0?">":(example_classes[l]==1?"*":" ")),score[l],class->data);
+							if((score[l]<0 && example_classes[l]==1))
+							{
+								erroneous_example=1;
+								by_class_errors[l]++;
+							}
+							if(example_classes[l]==1)
+								by_class_totals[l]++;
 						}
-					}
+						if(erroneous_example == 1) errors++;
+					/*}
 					else
 					{
 						fprintf(stdout,"correct label = ?\n");
@@ -1679,17 +1915,24 @@ int main(int argc, char** argv)
 							string_t* class=vector_get(classes,l);
 							fprintf(stdout,"   % 5f : %s\n", score[l],class->data);
 						}
-					}
+					}*/
 				}
 			}
-			vector_free(tokens);
 			string_array_free(array_of_tokens);
 			string_free(line);
 			num_examples++;
 		}
 		if(!dryrun_mode && classification_output!=0)
 		{
-			fprintf(stderr,"ERROR RATE: %f\n",(double)errors/(double)num_examples);
+			fprintf(stderr,"EXAMPLE ERROR RATE: %f (%d/%d)\n",(double)errors/(double)(num_examples), errors, num_examples);
+			int l;
+			for(l=0; l<classes->length; l++)
+			{
+				string_t* class = vector_get(classes, l);
+				fprintf(stderr, "  %s: %f (%d/%d)\n", class->data,
+					(by_class_totals==0 ? NAN : (double)by_class_errors[l]/(double)by_class_totals[l]),
+					by_class_errors[l], by_class_totals[l]);
+			}
 		}
 		exit(0);
 	}
@@ -1700,7 +1943,7 @@ int main(int argc, char** argv)
 		data_filename = string_copy(stem);
 		string_append_cstr(data_filename, ".data");
 	}
-	vector_t* examples = load_examples(data_filename->data, templates, classes, feature_count_cutoff, 0, text_expert_type, text_expert_length, no_unk_ngrams);
+	vector_t* examples = load_examples_multilabel(data_filename->data, templates, classes, feature_count_cutoff, 0, text_expert_type, text_expert_length, no_unk_ngrams);
 	string_free(data_filename);
 
 	// generate a simple random sequence of example ids for sampleing
@@ -1721,12 +1964,12 @@ int main(int argc, char** argv)
 
 	data_filename = string_copy(stem);
 	string_append_cstr(data_filename, ".dev");
-	dev_examples = load_examples(data_filename->data, templates, classes, 0, 1, text_expert_type, text_expert_length, no_unk_ngrams);
+	dev_examples = load_examples_multilabel(data_filename->data, templates, classes, 0, 1, text_expert_type, text_expert_length, no_unk_ngrams);
 	string_free(data_filename);
 
 	data_filename = string_copy(stem);
 	string_append_cstr(data_filename, ".test");
-	test_examples = load_examples(data_filename->data, templates, classes, 0, 1, text_expert_type, text_expert_length, no_unk_ngrams);
+	test_examples = load_examples_multilabel(data_filename->data, templates, classes, 0, 1, text_expert_type, text_expert_length, no_unk_ngrams);
 	string_free(data_filename);
 
 	if(model_name==NULL)
