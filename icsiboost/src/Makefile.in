@@ -179,11 +179,11 @@ utils = utils/vector.c utils/string.c utils/hashtable.c utils/array.c \
 	utils/common.h
 classifier = examples.c examples.h
 icsiboost_SOURCES = icsiboost.c $(utils)
-icsiboost_LDADD = -lm -lpthread -lz
+icsiboost_LDADD = -lm -lpthread -lz -lpcre
 perceptron_SOURCES = perceptron.c $(utils) $(classifier)
-perceptron_LDADD = -lm -lpthread -lz
+perceptron_LDADD = -lm -lpthread -lz -lpcre
 utils_test_SOURCES = utils_test.c $(utils)
-utils_test_LDADD = -lm -lz
+utils_test_LDADD = -lm -lz -lpcre
 EXTRA_DIST = test_uci.sh
 all: all-am
 

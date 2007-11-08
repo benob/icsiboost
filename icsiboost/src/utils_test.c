@@ -224,7 +224,7 @@ int main(int argc, char** argv)
 	vector_t* groups=NULL;
 	while((groups=string_match(string,"E(.)","ci"))!=NULL)
 	{
-		fprintf(stdout,"%s %s\n", ((string_t*)vector_get(groups, 0))->data, ((string_t*)vector_get(groups, 1))->data);
+		fprintf(stdout,"[%s] [%s]\n", ((string_t*)vector_get(groups, 0))->data, ((string_t*)vector_get(groups, 1))->data);
 		string_vector_free(groups);
 	}
 	if(string_match(string,"ee","n"))

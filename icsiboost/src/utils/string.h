@@ -25,7 +25,12 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #include "utils/vector.h"
 #include "utils/array.h"
 
+#ifdef USE_PCRE // extended perl like regular expressions
+#include <pcre.h>
+#else
 #include <regex.h>
+#endif
+
 #include <stdio.h>
 
 typedef struct string {
