@@ -16,10 +16,10 @@
 # Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
 AC_PREREQ(2.59)
-AC_INIT([icsiboost],[0.3.1a],[favre@icsi.berkeley.edu])
+AC_INIT([icsiboost],[0.3c],[favre@icsi.berkeley.edu])
 #AC_CONFIG_SRCDIR([src/icsiboost.c])
 AM_INIT_AUTOMAKE()
-AM_CONFIG_HEADER([config.h])
+AC_CONFIG_HEADERS([config.h])
 
 case `uname` in
 	*Darwin*)
@@ -32,23 +32,33 @@ AC_PROG_CC
 # Checks for libraries.
 # FIXME: Replace `main' with a function in `-lm':
 AC_CHECK_LIB([m], [main])
+# FIXME: Replace `main' with a function in `-lpcre':
+AC_CHECK_LIB([pcre], [main])
 # FIXME: Replace `main' with a function in `-lpthread':
 AC_CHECK_LIB([pthread], [main])
+# FIXME: Replace `main' with a function in `-lz':
+AC_CHECK_LIB([z], [main])
 
 # Checks for header files.
 AC_HEADER_STDC
-AC_CHECK_HEADERS([fcntl.h stdlib.h string.h unistd.h])
+AC_HEADER_SYS_WAIT
+AC_CHECK_HEADERS([fcntl.h stdint.h stdlib.h string.h unistd.h])
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_C_CONST
+AC_C_INLINE
 AC_TYPE_OFF_T
 AC_TYPE_SIZE_T
 
 # Checks for library functions.
+AC_FUNC_FORK
 AC_FUNC_FSEEKO
+AC_FUNC_MEMCMP
 AC_FUNC_MMAP
+AC_TYPE_SIGNAL
+AC_FUNC_STAT
 AC_FUNC_STRTOD
-AC_CHECK_FUNCS([memmove memset munmap regcomp sqrt strdup strtol])
+AC_CHECK_FUNCS([dup2 memmove memset munmap regcomp sqrt strdup strerror strtol])
 
 # generate version information
 #svn info|awk 'BEGIN{print "#ifndef _VERSION_H_\n#define _VERSION_H_\n#define SVN_INFO \\"}{print "\"  " $0 "\\n\" \\"}END{print "\"\"\n#endif"}' > $SOURCE_DIR/version.h
