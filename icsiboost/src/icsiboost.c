@@ -1138,7 +1138,7 @@ vector_t* load_examples_multilabel(const char* filename, vector_t* templates, ve
 	return examples;
 }*/
 
-vector_t* load_model(vector_t* templates, vector_t* classes, char* filename)
+vector_t* load_model(vector_t* templates, vector_t* classes, char* filename, int num_iterations_to_load)
 {
 	int i;
 	vector_t* classifiers=vector_new(16);
@@ -1270,6 +1270,7 @@ vector_t* load_model(vector_t* templates, vector_t* classes, char* filename)
 			if(current->type==CLASSIFIER_TYPE_TEXT)
 			{
 				current=NULL;
+				if(num_iterations_to_load > 0 && classifiers->length >= num_iterations_to_load){ string_free(line); break;} // clip classifiers
 			}
 		}
 		else if(current->type==CLASSIFIER_TYPE_THRESHOLD)
@@ -1277,6 +1278,7 @@ vector_t* load_model(vector_t* templates, vector_t* classes, char* filename)
 			current->threshold=string_to_double(line);
 			if(isnan(current->threshold))die("invalid threshold \"%s\", line %d in %s", line->data, line_num, filename);
 			current=NULL;
+			if(num_iterations_to_load > 0 && classifiers->length >= num_iterations_to_load){ string_free(line); break; } // clip classifiers
 		}
 		else die("invalid classifier definition \"%s\", line %d in %s", line->data, line_num, filename);
 		string_free(line);
@@ -1377,7 +1379,7 @@ void usage(char* program_name)
 	fprintf(stderr,"USAGE: %s [options] -S <stem>\n",program_name);
 	fprintf(stderr,"  --version               print version info\n");
 	fprintf(stderr,"  -S <stem>               defines model/data/names stem\n");
-	fprintf(stderr,"  -n <iterations>         number of boosting iterations\n");
+	fprintf(stderr,"  -n <iterations>         number of boosting iterations (also limits test time classifiers, if model is not packed)\n");
 	fprintf(stderr,"  -E <smoothing>          set smoothing value (default=0.5)\n");
 	fprintf(stderr,"  -V                      verbose mode\n");
 	fprintf(stderr,"  -C                      classification mode -- reads examples from <stdin>\n");
@@ -1432,6 +1434,7 @@ int main(int argc, char** argv)
 	GC_INIT();
 #endif
 	int maximum_iterations=10;
+	int test_time_iterations=-1;
 	int feature_count_cutoff=0;
 	int classification_mode=0;
 	int classification_output=0;
@@ -1461,6 +1464,7 @@ int main(int argc, char** argv)
 			arg=(string_t*)array_shift(args);
 			if(arg==NULL)die("value needed for -n");
 			maximum_iterations=string_to_int32(arg);
+			test_time_iterations=maximum_iterations;
 			if(maximum_iterations<=0)die("invalid value for -n [%s]",arg->data);
 		}
 		else if(string_eq_cstr(arg,"--cutoff"))
@@ -1736,7 +1740,7 @@ int main(int argc, char** argv)
 			 model_name = string_copy(stem);
 			string_append_cstr(model_name, ".shyp");
 		}
-		classifiers=load_model(templates,classes,model_name->data);
+		classifiers=load_model(templates,classes,model_name->data, test_time_iterations);
 		double sum_of_alpha=0;
 		int errors=0;
 		int by_class_errors[classes->length];
