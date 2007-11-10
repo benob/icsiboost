@@ -513,6 +513,7 @@ double compute_test_error(vector_t* classifiers, vector_t* examples, int num_cla
 			float value=example->continuous_features[classifier->column];
 			if(isnan(value))
 			{
+				//fprintf(stdout, "%d %f==NAN\n", i+1, value, classifier->threshold);
 				for(l=0;l<num_classes;l++)
 				{
 					example->score[l]+=classifier->alpha*classifier->c0[l];
@@ -520,11 +521,13 @@ double compute_test_error(vector_t* classifiers, vector_t* examples, int num_cla
 			}
 			else if(value<classifier->threshold)
 			{
+				//fprintf(stdout, "%d %f<%f\n", i+1, value, classifier->threshold);
 				for(l=0;l<num_classes;l++)
 					example->score[l]+=classifier->alpha*classifier->c1[l];
 			}
 			else
 			{
+				//fprintf(stdout, "%d %f>=%f\n", i+1, value, classifier->threshold);
 				for(l=0;l<num_classes;l++)
 					example->score[l]+=classifier->alpha*classifier->c2[l];
 			}
@@ -533,6 +536,7 @@ double compute_test_error(vector_t* classifiers, vector_t* examples, int num_cla
 		{
 			int j;
 			int has_token=0;
+			//tokeninfo_t* tokeninfo=(tokeninfo_t*) vector_get(classifier->template->tokens,classifier->token);
 			if(example->discrete_features[classifier->column] != NULL)
 				for(j=0; j<example->discrete_features[classifier->column]->length; j++)
 				{
@@ -544,16 +548,19 @@ double compute_test_error(vector_t* classifiers, vector_t* examples, int num_cla
 				}
 			if(has_token)
 			{
+				//fprintf(stdout, "%d has token %s\n", i, tokeninfo->key);
 				for(l=0;l<num_classes;l++)
 					example->score[l]+=classifier->alpha*classifier->c2[l];
 			}
 			else // unknown or absent (c1 = c0)
 			{
+				//fprintf(stdout, "%d not has token %s\n", i, tokeninfo->key);
 				for(l=0;l<num_classes;l++)
 					example->score[l]+=classifier->alpha*classifier->c1[l];
 			}
 		}
 		int erroneous_example = 0;
+		//if(i<10)fprintf(stdout,"%d %f %f\n", i, example->score[0], example->score[1]);
 		for(l=0;l<num_classes;l++) // selected class = class with highest score
 		{
 			if(example->score[l]>0.0 && !b_test(example,l)) erroneous_example = 1;
@@ -785,6 +792,7 @@ vector_t* load_examples_multilabel(const char* filename, vector_t* templates, ve
 		{
 			test_example=MALLOC(sizeof(test_example_t));
 			test_example->score=MALLOC(sizeof(double)*classes->length);
+			for(i=0; i<classes->length; i++)test_example->score[i]=0.0;
 			test_example->continuous_features=MALLOC(sizeof(float)*templates->length);
 			memset(test_example->continuous_features,0,sizeof(float)*templates->length);
 			test_example->discrete_features=MALLOC(sizeof(vector_t*)*templates->length);
