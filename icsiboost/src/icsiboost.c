@@ -1,7 +1,7 @@
 /* Copyright (C) (2007) (Benoit Favre) <favre@icsi.berkeley.edu>
 
 This program is free software; you can redistribute it and/or 
-modify it under the terms of the GNU General Public License 
+modify it under the terms of the GNU Lesser General Public License 
 as published by the Free Software Foundation; either 
 version 2 of the License, or (at your option) any later 
 version.
@@ -9,9 +9,9 @@ version.
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+GNU Lesser General Public License for more details.
 
-You should have received a copy of the GNU General Public License
+You should have received a copy of the GNU Lesser General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 
@@ -52,7 +52,6 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 // declare vectors that are interesting for us
 vector_implement_functions_for_type(float, 0.0);
 vector_implement_functions_for_type(int32_t, 0);
-
 
 /*int num_EXP=0;
 double EXP(double number)
@@ -1398,7 +1397,8 @@ void usage(char* program_name)
 	fprintf(stderr,"  --cutoff <freq>         ignore nominal features occuring unfrequently (shorten training time)\n");
 	fprintf(stderr,"  --no-unk-ngrams         ignore ngrams that contain the \"unk\" token\n");
 	fprintf(stderr,"  --jobs <threads>        number of threaded weak learners\n");
-	fprintf(stderr,"  --do-not-pack-model     do not pack model (to get individual training steps)\n");
+	fprintf(stderr,"  --do-not-pack-model     do not pack model (this is the default behavior)\n");
+	fprintf(stderr,"  --pack-model            pack model (for boostexter compatibility)\n");
 	fprintf(stderr,"  --output-weights        output training examples weights at each iteration\n");
 	fprintf(stderr,"  --model <model>         save/load the model to/from this file instead of <stem>.shyp\n");
 	fprintf(stderr,"  --train <file>          bypass the <stem>.data filename to specify training examples\n");
@@ -1408,6 +1408,7 @@ void usage(char* program_name)
 	fprintf(stderr,"  --ignore-regex <regex>  ignore columns that match a given regex\n");
 	fprintf(stderr,"  --interruptible         save model after each iteration in case of failure/interruption\n");
 	fprintf(stderr,"  --optimal-iterations    output the model at the iteration that minimizes dev error\n");
+	fprintf(stderr,"  --sequence              generate column __SEQUENCE_PREVIOUS from previous prediction at test time (experimental)\n");
 	exit(1);
 }
 
@@ -1447,12 +1448,13 @@ int main(int argc, char** argv)
 	int classification_mode=0;
 	int classification_output=0;
 	int dryrun_mode=0;
-	int pack_model=1;
+	int pack_model=0;
 	int text_expert_type=TEXT_EXPERT_NGRAM;
 	int text_expert_length=1;
 	int optimal_iterations=0;
 	int save_model_at_each_iteration=0;
 	int no_unk_ngrams=0;
+	int sequence_classification = 0;
 	string_t* model_name=NULL;
 	string_t* data_filename=NULL;
 	string_t* names_filename=NULL;
@@ -1567,6 +1569,10 @@ int main(int argc, char** argv)
 			arg=(string_t*)array_shift(args);
 			data_filename=string_copy(arg);
 		}
+		else if(string_eq_cstr(arg,"--pack-model"))
+		{
+			pack_model=1;
+		}
 		else if(string_eq_cstr(arg,"--do-not-pack-model"))
 		{
 			pack_model=0;
@@ -1611,6 +1617,10 @@ int main(int argc, char** argv)
 			{
 				die("invalid window length \"%s\"",arg->data);
 			}
+		}
+		else if(string_eq_cstr(arg, "--sequence"))
+		{
+			sequence_classification = 1;
 		}
 		else usage(argv[0]);
 		string_free(arg);
@@ -1765,6 +1775,7 @@ int main(int argc, char** argv)
 
 		string_t* line=NULL;
 		int line_num=0;
+		string_t* previous_decision = string_new("?");
 		while((line=string_readline(stdin))!=NULL)
 		{
 			line_num++;
@@ -1784,6 +1795,10 @@ int main(int argc, char** argv)
 			{
 				template_t* template=vector_get(templates, i);
 				string_t* token=array_get(array_of_tokens, i);
+				if(sequence_classification == 1 && string_eq_cstr(template->name, "__SEQUENCE_PREVIOUS"))
+				{
+					token = previous_decision;
+				}
 				if(template->type == FEATURE_TYPE_TEXT || template->type == FEATURE_TYPE_SET)
 				{
 					hashtable_t* subtokens=hashtable_new();
@@ -1866,6 +1881,18 @@ int main(int argc, char** argv)
 			for(l=0; l<classes->length; l++)score[l]/=sum_of_alpha;
 			if(!dryrun_mode)
 			{
+				if(sequence_classification == 1)
+				{
+					array_t* predicted_labels = array_new();
+					for(l=0; l<classes->length; l++)
+					{
+						if(score[l]>0) array_push(predicted_labels, vector_get(classes, l));
+					}
+					string_free(previous_decision);
+					previous_decision = string_join_cstr(" ", predicted_labels);
+					fprintf( stdout, "previous_decision = [%s]\n", previous_decision->data);
+					array_free(predicted_labels);
+				}
 				if(classification_output==0)
 				{
 					for(l=0; l<classes->length; l++)
@@ -1946,6 +1973,7 @@ int main(int argc, char** argv)
 					by_class_errors[l], by_class_totals[l]);
 			}
 		}
+		string_free(previous_decision);
 		exit(0);
 	}
 

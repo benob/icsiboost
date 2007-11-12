@@ -57,4 +57,5 @@ int main(int argc, char** argv)
 		}
 		fprintf(stdout,"iteration %d, error %f\n", iteration, error/examples->length);
 	}
+	return 0;
 }
