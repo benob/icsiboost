@@ -53,6 +53,8 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 vector_implement_functions_for_type(float, 0.0);
 vector_implement_functions_for_type(int32_t, 0);
 
+int use_abstaining_text_stump = 0;
+int use_known_continuous_stump = 0;
 /*int num_EXP=0;
 double EXP(double number)
 {
@@ -285,6 +287,211 @@ weakclassifier_t* train_text_stump(double min_objective, template_t* template, v
 	return classifier;
 }
 
+weakclassifier_t* train_abstaining_text_stump(double min_objective, template_t* template, vector_t* examples, double** sum_of_weights, int num_classes)
+{
+	int i,l;
+	int column=template->column;
+	size_t num_tokens=template->tokens->length;
+	int32_t t;
+
+	double* weight[2][num_classes]; // weight[b][label][token] (=> D() in the paper), only for token presence (absence is infered from sum_of_weights)
+	for(l=0;l<num_classes;l++)
+	{
+		weight[0][l]=MALLOC(sizeof(double)*num_tokens);
+		weight[1][l]=MALLOC(sizeof(double)*num_tokens);
+	}
+	for(t=1;t<num_tokens;t++)  // initialize
+	{
+		for(l=0;l<num_classes;l++)
+		{
+			weight[0][l][t]=0.0;
+			weight[1][l][t]=0.0;
+		}
+		tokeninfo_t* tokeninfo=(tokeninfo_t*)vector_get(template->tokens, t);
+		//fprintf(stdout,"%s [%s] %d\n",template->name->data,tokeninfo->key,tokeninfo->examples->length);
+		for(i=0;i<tokeninfo->examples->length;i++) // compute the presence weights
+		{
+			example_t* example=(example_t*)vector_get(examples,vector_get_int32_t(tokeninfo->examples,i));
+			for(l=0;l<num_classes;l++)
+			{
+				weight[b(example,l)][l][t]+=example->weight[l];
+			}
+		}
+	}
+	weakclassifier_t* classifier=NULL; // init an empty classifier
+	classifier=MALLOC(sizeof(weakclassifier_t));
+	classifier->template=template;
+	classifier->threshold=NAN;
+	classifier->alpha=1.0;
+	classifier->type=CLASSIFIER_TYPE_TEXT;
+	classifier->token=0;
+	classifier->column=column;
+	classifier->objective=1.0;
+	classifier->c0=MALLOC(sizeof(double)*num_classes);
+	classifier->c1=MALLOC(sizeof(double)*num_classes);
+	classifier->c2=MALLOC(sizeof(double)*num_classes);
+	double epsilon=smoothing/(num_classes*examples->length);
+
+	//min_objective=1;
+	for(t=1;t<num_tokens;t++)
+	{
+		double objective=0;
+		double w0=0;
+		for(l=0;l<num_classes;l++) // compute the objective function Z()=sum_j(sum_l(SQRT(W+*W-))
+		{
+			objective+=SQRT(weight[1][l][t]*weight[0][l][t]);
+			//objective+=SQRT((sum_of_weights[1][l]-weight[1][l][t])*(sum_of_weights[0][l]-weight[0][l][t]));
+			w0+=sum_of_weights[0][l]-weight[0][l][t]+sum_of_weights[1][l]-weight[1][l][t];
+		}
+		objective*=2;
+		objective+=w0;
+		//fprintf(stdout,"DEBUG: column=%d token=%d obj=%f w0=%f\n",column,t,objective, w0);
+		if(objective-min_objective<-1e-11) // select the argmin()
+		{
+			min_objective=objective;
+			classifier->token=t;
+			classifier->objective=objective;
+			for(l=0;l<num_classes;l++)  // update c0, c1 and c2 => c0 and c1 are the same for text stumps
+			{
+				classifier->c0[l]=0.0;
+				classifier->c1[l]=0.0;
+				classifier->c2[l]=0.5*LOG((weight[1][l][t]+epsilon)/(weight[0][l][t]+epsilon));
+			}
+		}
+	}
+	for(l=0;l<num_classes;l++) // free memory
+	{
+		FREE(weight[0][l]);
+		FREE(weight[1][l]);
+	}
+	//tokeninfo_t* info=vector_get(template->tokens,classifier->token);
+	//fprintf(stdout,"DEBUG: column=%d token=%s obj=%f %s\n",column,info->key,classifier->objective,template->name->data);
+	if(classifier->token==0) // no better classifier has been found
+	{
+		FREE(classifier->c0);
+		FREE(classifier->c1);
+		FREE(classifier->c2);
+		FREE(classifier);
+		return NULL;
+	}
+	return classifier;
+}
+
+weakclassifier_t* train_known_continuous_stump(double min_objective, template_t* template, vector_t* examples_vector, int num_classes)
+{
+	size_t i,j,l;
+	int column=template->column;
+	float* values=(float*)template->values->data;
+	int32_t* ordered=template->ordered;
+	example_t** examples=(example_t**)examples_vector->data;
+	if(ordered==NULL) // only order examples once, then keep the result in the template
+	{
+		ordered=MALLOC(sizeof(int32_t)*examples_vector->length);
+		int32_t index=0;
+		for(index=0;index<examples_vector->length;index++)ordered[index]=index;
+		int local_comparator(const void* _a, const void* _b)
+		{
+			int32_t aa=*(int32_t*)_a;
+			int32_t bb=*(int32_t*)_b;
+			float aa_value=values[aa];
+			float bb_value=values[bb];
+			if(isnan(aa_value) || aa_value>bb_value)return 1; // put the NAN (unknown values) at the end of the list
+			if(isnan(bb_value) || aa_value<bb_value)return -1;
+			return 0;
+		}
+		qsort(ordered,examples_vector->length,sizeof(int32_t),local_comparator);
+		template->ordered=ordered;
+	}
+
+	double weight[3][2][num_classes]; // D(j,b,l)
+	for(j=0;j<3;j++)
+		for(l=0;l<num_classes;l++)
+		{
+			weight[j][0][l]=0.0;
+			weight[j][1][l]=0.0;
+		}
+	//double sum_of_unknowns = 0;
+	for(i=0;i<examples_vector->length;i++) // compute the "unknown" weights and the weight of examples after threshold
+	{
+		int32_t example_id=ordered[i];
+		example_t* example=examples[example_id];
+		//fprintf(stdout,"%d %f\n",column,vector_get_float(example->features,column));
+		for(l=0;l<num_classes;l++)
+		{
+			if(isnan(values[example_id])) {
+				//sum_of_unknowns += example->weight[l];
+				weight[0][b(example,l)][l]+=example->weight[l];
+			} else
+				weight[2][b(example,l)][l]+=example->weight[l];
+		}
+	}
+	weakclassifier_t* classifier=NULL; // new classifier
+	classifier=MALLOC(sizeof(weakclassifier_t));
+	classifier->template=template;
+	classifier->threshold=NAN;
+	classifier->alpha=1.0;
+	classifier->type=CLASSIFIER_TYPE_THRESHOLD;
+	classifier->token=0;
+	classifier->column=column;
+	classifier->objective=1.0;
+	classifier->c0=MALLOC(sizeof(double)*num_classes);
+	classifier->c1=MALLOC(sizeof(double)*num_classes);
+	classifier->c2=MALLOC(sizeof(double)*num_classes);
+	double epsilon=smoothing/(num_classes*examples_vector->length);
+
+	for(i=0;i<examples_vector->length-1;i++) // compute the objective function at every possible threshold (in between examples)
+	{
+		int32_t example_id=ordered[i];
+		example_t* example=examples[example_id];
+		//fprintf(stdout,"%zd %zd %f\n",i,vector_get_int32_t(ordered,i),vector_get_float(template->values,example_id));
+		if(isnan(values[example_id]))break; // skip unknown values
+		//example_t* next_example=(example_t*)vector_get(examples,(size_t)next_example_id);
+		for(l=0;l<num_classes;l++) // update the objective function by putting the current example the other side of the threshold
+		{
+			weight[1][b(example,l)][l]+=example->weight[l];
+			weight[2][b(example,l)][l]-=example->weight[l];
+		}
+		int next_example_id=ordered[i+1];
+		if(values[example_id]==values[next_example_id])continue; // same value
+		double objective=0;
+		double w0 = 0.0;
+		for(l=0;l<num_classes;l++) // compute objective Z()
+		{
+			//objective+=SQRT(weight[0][1][l]*weight[0][0][l]);
+			objective+=SQRT(weight[1][1][l]*weight[1][0][l]);
+			objective+=SQRT(weight[2][1][l]*weight[2][0][l]);
+			w0 += weight[0][0][l]+weight[0][1][l];
+		}
+		objective*=2;
+		objective+=w0;
+		//fprintf(stdout,"DEBUG: column=%d threshold=%f obj=%f\n",column,(vector_get_float(next_example->features,column)+vector_get_float(example->features,column))/2,objective);
+		if(objective-min_objective<-1e-11) // get argmin
+		{
+			classifier->objective=objective;
+			classifier->threshold=((double)values[next_example_id]+(double)values[example_id])/2.0; // threshold between current and next example
+			if(isnan(classifier->threshold))die("threshold is nan, column=%d, objective=%f, i=%zd",column,objective,i); // should not happend
+			//fprintf(stdout," %d:%d:%f",column,i,classifier->threshold);
+			min_objective=objective;
+			for(l=0;l<num_classes;l++) // update class weight
+			{
+				classifier->c0[l]=0.0;
+				classifier->c1[l]=0.5*LOG((weight[1][1][l]+epsilon)/(weight[1][0][l]+epsilon));
+				classifier->c2[l]=0.5*LOG((weight[2][1][l]+epsilon)/(weight[2][0][l]+epsilon));
+			}
+		}
+	}
+	//fprintf(stdout,"DEBUG: column=%d threshold=%f obj=%f %s\n",column,classifier->threshold,classifier->objective,template->name->data);
+	if(isnan(classifier->threshold)) // not found a better classifier
+	{
+		FREE(classifier->c0);
+		FREE(classifier->c1);
+		FREE(classifier->c2);
+		FREE(classifier);
+		return NULL;
+	}
+	return classifier;
+}
+
 weakclassifier_t* train_continuous_stump(double min_objective, template_t* template, vector_t* examples_vector, int num_classes)
 {
 	size_t i,j,l;
@@ -457,11 +664,17 @@ void* threaded_worker(void* data)
 		weakclassifier_t* current=NULL;
 		if(template->type==FEATURE_TYPE_CONTINUOUS)
 		{
-			current=train_continuous_stump(1.0, template, toolbox->examples, toolbox->classes->length);
+			if(use_known_continuous_stump)
+				current=train_known_continuous_stump(1.0, template, toolbox->examples, toolbox->classes->length);
+			else
+				current=train_continuous_stump(1.0, template, toolbox->examples, toolbox->classes->length);
 		}
 		else if(template->type==FEATURE_TYPE_TEXT || template->type==FEATURE_TYPE_SET)
 		{
-			current=train_text_stump(1.0, template, toolbox->examples, toolbox->sum_of_weights, toolbox->classes->length);
+			if(use_abstaining_text_stump)
+				current=train_abstaining_text_stump(1.0, template, toolbox->examples, toolbox->sum_of_weights, toolbox->classes->length);
+			else
+				current=train_text_stump(1.0, template, toolbox->examples, toolbox->sum_of_weights, toolbox->classes->length);
 		}
 		//----------- return the result
 		if(current!=NULL)
@@ -584,11 +797,12 @@ double compute_classification_error(vector_t* classifiers, vector_t* examples, d
 			float value=vector_get_float(classifier->template->values,i);
 			if(isnan(value))
 			{
-				for(l=0;l<num_classes;l++)
-				{
-					example->score[l]+=classifier->alpha*classifier->c0[l];
-					example->weight[l]=example->weight[l]*EXP(-classifier->alpha*y_l(example,l)*classifier->c0[l]);
-				}
+				if(use_known_continuous_stump == 0)
+					for(l=0;l<num_classes;l++)
+					{
+						example->score[l]+=classifier->alpha*classifier->c0[l];
+						example->weight[l]=example->weight[l]*EXP(-classifier->alpha*y_l(example,l)*classifier->c0[l]);
+					}
 			}
 			else if(value<classifier->threshold)
 			{
@@ -631,11 +845,12 @@ double compute_classification_error(vector_t* classifiers, vector_t* examples, d
 			}
 			else // unknown or absent (c1 = c0)
 			{
-				for(l=0;l<num_classes;l++)
-				{
-					example->score[l]+=classifier->alpha*classifier->c1[l];
-					example->weight[l]=example->weight[l]*EXP(-classifier->alpha*y_l(example,l)*classifier->c1[l]);
-				}
+				if(use_abstaining_text_stump == 0)
+					for(l=0;l<num_classes;l++)
+					{
+						example->score[l]+=classifier->alpha*classifier->c1[l];
+						example->weight[l]=example->weight[l]*EXP(-classifier->alpha*y_l(example,l)*classifier->c1[l]);
+					}
 			}
 		}
 		FREE(seen_examples);
@@ -671,8 +886,8 @@ double compute_classification_error(vector_t* classifiers, vector_t* examples, d
 				example->weight[l]/=normalization;
 				if(output_weights)fprintf(stdout," %f",example->weight[l]);
 				/*if(example->weight[l]<0)die("ERROR: negative weight: %d %d %f",i,l,example->weight[l]);
-				if(min_weight>example->weight[l]){min_weight=example->weight[l];}
-				if(max_weight<example->weight[l]){max_weight=example->weight[l];}*/
+				  if(min_weight>example->weight[l]){min_weight=example->weight[l];}
+				  if(max_weight<example->weight[l]){max_weight=example->weight[l];}*/
 				//fprintf(stdout," %f",example->weight[l]);
 				sum_of_weights[b(example,l)][l]+=example->weight[l];
 			}
@@ -1408,6 +1623,8 @@ void usage(char* program_name)
 	fprintf(stderr,"  --ignore-regex <regex>  ignore columns that match a given regex\n");
 	fprintf(stderr,"  --interruptible         save model after each iteration in case of failure/interruption\n");
 	fprintf(stderr,"  --optimal-iterations    output the model at the iteration that minimizes dev error\n");
+	fprintf(stderr,"  --abstaining-stump      use abstain-on-absence text stump\n");
+	fprintf(stderr,"  --no-unknown-stump      use abstain-on-unknown continuous stump\n");
 	fprintf(stderr,"  --sequence              generate column __SEQUENCE_PREVIOUS from previous prediction at test time (experimental)\n");
 	exit(1);
 }
@@ -1505,6 +1722,14 @@ int main(int argc, char** argv)
 #else
 			die("thread support has not been activated at compile time");
 #endif
+		}
+		else if(string_eq_cstr(arg,"--abstaining-stump"))
+		{
+			use_abstaining_text_stump = 1;
+		}
+		else if(string_eq_cstr(arg,"--no-unknown-stump"))
+		{
+			use_known_continuous_stump = 1;
 		}
 		else if(string_eq_cstr(arg,"-V"))
 		{
@@ -2125,11 +2350,17 @@ int main(int argc, char** argv)
 			weakclassifier_t* current=NULL;
 			if(template->type==FEATURE_TYPE_CONTINUOUS)
 			{
-				current=train_continuous_stump(min_objective, template, examples, classes->length);
+				if(use_known_continuous_stump)
+					current=train_known_continuous_stump(1.0, template, toolbox->examples, toolbox->classes->length);
+				else
+					current=train_continuous_stump(1.0, template, toolbox->examples, toolbox->classes->length);
 			}
 			else if(template->type==FEATURE_TYPE_TEXT || template->type==FEATURE_TYPE_SET)
 			{
-				current=train_text_stump(min_objective, template, examples, sum_of_weights, classes->length);
+				if(use_abstaining_text_stump)
+					current=train_abstaining_text_stump(1.0, template, toolbox->examples, toolbox->sum_of_weights, toolbox->classes->length);
+				else
+					current=train_text_stump(1.0, template, toolbox->examples, toolbox->sum_of_weights, toolbox->classes->length);
 			}
 			// else => FEATURE_TYPE_IGNORE
 			if(current==NULL)continue;
