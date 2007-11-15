@@ -1752,7 +1752,7 @@ am__tar='${AMTAR} chof - "$$tardir"'; am__untar='${AMTAR} xf -'
 
 case `uname` in
 	*Darwin*)
-	CFLAGS="$CFLAGS -fnested-functions"
+	CFLAGS="-fnested-functions -I/opt/local/include -L/opt/local/lib"
 	;;
 esac
 # Checks for programs.

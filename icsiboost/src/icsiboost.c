@@ -55,6 +55,8 @@ vector_implement_functions_for_type(int32_t, 0);
 
 int use_abstaining_text_stump = 0;
 int use_known_continuous_stump = 0;
+int enforce_anti_priors = 0;
+
 /*int num_EXP=0;
 double EXP(double number)
 {
@@ -970,7 +972,7 @@ array_t* text_expert(int type, int length, int no_unk_ngrams, string_t* text)
 	return output;
 }
 
-vector_t* load_examples_multilabel(const char* filename, vector_t* templates, vector_t* classes, 
+vector_t* load_examples_multilabel(const char* filename, vector_t* templates, vector_t* classes, double* class_priors, 
 	int feature_count_cutoff, int in_test, int text_expert_type, int text_expert_length, int no_unk_ngrams)
 {
 	FILE* fp=stdin;
@@ -1126,9 +1128,30 @@ vector_t* load_examples_multilabel(const char* filename, vector_t* templates, ve
 		if(in_test) vector_push(examples, test_example);
 		else vector_push(examples, example);
 	}
+	fprintf(stderr, "\r%s: %d\n", filename, line_num);
 	// initalize weights and score
 	if(!in_test)
 	{
+		if(class_priors != NULL)
+		{
+			int l;
+			for(l=0; l<classes->length; l++) class_priors[l] = 0.0;
+			for(i=0;i<examples->length;i++)
+			{
+				example_t* example=(example_t*)vector_get(examples,i);
+				for(j=0; j<example->num_classes; j++)
+				{
+					class_priors[example->classes[j]]++;
+				}
+			}
+			for(l=0; l<classes->length; l++)
+			{
+				class_priors[l] /= examples->length;
+				string_t* class = vector_get(classes, l);
+				if(verbose) fprintf(stderr,"CLASS PRIOR: %s %f\n", class->data, class_priors[l]);
+			}
+		}
+		double normalization=0.0;
 		for(i=0;i<examples->length;i++)
 		{
 			example_t* example=(example_t*)vector_get(examples,i);
@@ -1137,14 +1160,28 @@ vector_t* load_examples_multilabel(const char* filename, vector_t* templates, ve
 			example->score=(double*)MALLOC(classes->length*sizeof(double));
 			for(j=0;j<classes->length;j++)
 			{
-				example->weight[j]=1.0/(classes->length*examples->length); // 1/(m*k)
+				if(enforce_anti_priors == 1)
+				{
+					if(b(example,j)==0)
+						example->weight[j]=class_priors[j];
+					else
+						example->weight[j]=1.0;
+				}
+				else
+					example->weight[j]=1.0;
+				normalization+=example->weight[j];
 				example->score[j]=0.0;
 			}
+		}
+		for(i=0;i<examples->length;i++)
+		{
+			example_t* example=(example_t*)vector_get(examples,i);
+			for(j=0;j<classes->length;j++)
+				example->weight[j]/=normalization;
 		}
 	}
 	vector_optimize(examples);
 	fclose(fp);
-	fprintf(stderr, "\r%s: %d\n", filename, line_num);
 	return examples;
 }
 
@@ -1623,9 +1660,10 @@ void usage(char* program_name)
 	fprintf(stderr,"  --ignore-regex <regex>  ignore columns that match a given regex\n");
 	fprintf(stderr,"  --interruptible         save model after each iteration in case of failure/interruption\n");
 	fprintf(stderr,"  --optimal-iterations    output the model at the iteration that minimizes dev error\n");
-	fprintf(stderr,"  --abstaining-stump      use abstain-on-absence text stump\n");
-	fprintf(stderr,"  --no-unknown-stump      use abstain-on-unknown continuous stump\n");
+	fprintf(stderr,"  --abstaining-stump      use abstain-on-absence text stump (experimental)\n");
+	fprintf(stderr,"  --no-unknown-stump      use abstain-on-unknown continuous stump (experimental)\n");
 	fprintf(stderr,"  --sequence              generate column __SEQUENCE_PREVIOUS from previous prediction at test time (experimental)\n");
+	fprintf(stderr,"  --anti-prior            set initial weights to focus on classes with a lower prior (experimental)\n");
 	exit(1);
 }
 
@@ -1773,6 +1811,10 @@ int main(int argc, char** argv)
 		else if(string_eq_cstr(arg,"--no-unk-ngrams"))
 		{
 			no_unk_ngrams=1;
+		}
+		else if(string_eq_cstr(arg,"--anti-prior"))
+		{
+			enforce_anti_priors=1;
 		}
 		else if(string_eq_cstr(arg,"-C"))
 		{
@@ -2202,13 +2244,14 @@ int main(int argc, char** argv)
 		exit(0);
 	}
 
+	double class_priors[classes->length];
 	// load a train, dev and test sets (if available)
 	if(data_filename==NULL)
 	{
 		data_filename = string_copy(stem);
 		string_append_cstr(data_filename, ".data");
 	}
-	vector_t* examples = load_examples_multilabel(data_filename->data, templates, classes, feature_count_cutoff, 0, text_expert_type, text_expert_length, no_unk_ngrams);
+	vector_t* examples = load_examples_multilabel(data_filename->data, templates, classes, class_priors, feature_count_cutoff, 0, text_expert_type, text_expert_length, no_unk_ngrams);
 	string_free(data_filename);
 
 	// generate a simple random sequence of example ids for sampleing
@@ -2229,12 +2272,12 @@ int main(int argc, char** argv)
 
 	data_filename = string_copy(stem);
 	string_append_cstr(data_filename, ".dev");
-	dev_examples = load_examples_multilabel(data_filename->data, templates, classes, 0, 1, text_expert_type, text_expert_length, no_unk_ngrams);
+	dev_examples = load_examples_multilabel(data_filename->data, templates, classes, NULL, 0, 1, text_expert_type, text_expert_length, no_unk_ngrams);
 	string_free(data_filename);
 
 	data_filename = string_copy(stem);
 	string_append_cstr(data_filename, ".test");
-	test_examples = load_examples_multilabel(data_filename->data, templates, classes, 0, 1, text_expert_type, text_expert_length, no_unk_ngrams);
+	test_examples = load_examples_multilabel(data_filename->data, templates, classes, NULL, 0, 1, text_expert_type, text_expert_length, no_unk_ngrams);
 	string_free(data_filename);
 
 	if(model_name==NULL)
