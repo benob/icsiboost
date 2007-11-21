@@ -29,6 +29,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #include "utils/hashtable.h"
 #include "utils/mapped.h"
 #include "utils/array.h"
+#include "utils/file.h"
 
 #ifdef USE_THREADS
 #include "utils/threads.h"
@@ -44,6 +45,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #include <string.h>
 #include <math.h>
 #include <time.h>
+#include <unistd.h>
 
 #ifdef USE_FLOATS
 #define double float
@@ -713,12 +715,12 @@ void* threaded_worker(void* data)
    in testing conditions (dev or test set) sum_of_weights is NULL, so just compute error rate
    => need to be parallelized
 */
-double compute_test_error(vector_t* classifiers, vector_t* examples, int num_classes)
+double compute_test_error(vector_t* classifiers, vector_t* examples, int classifier_id, int num_classes)
 {
 	int i;
 	int l;
 	double error=0;
-	weakclassifier_t* classifier=vector_get(classifiers, classifiers->length-1);
+	weakclassifier_t* classifier=vector_get(classifiers, classifier_id);
 	for(i=0; i<examples->length; i++)
 	{
 		test_example_t* example = vector_get(examples, i);
@@ -784,13 +786,13 @@ double compute_test_error(vector_t* classifiers, vector_t* examples, int num_cla
 	return error/(examples->length);
 }
 
-double compute_classification_error(vector_t* classifiers, vector_t* examples, double** sum_of_weights, int num_classes)
+double compute_classification_error(vector_t* classifiers, vector_t* examples, int classifier_id, double** sum_of_weights, int num_classes)
 {
 	int i=0;
 	int l=0;
 	double error=0;
 	double normalization=0;
-	weakclassifier_t* classifier=(weakclassifier_t*)vector_get(classifiers,classifiers->length-1);
+	weakclassifier_t* classifier=(weakclassifier_t*)vector_get(classifiers,classifier_id);
 	if(classifier->type==CLASSIFIER_TYPE_THRESHOLD)
 	{
 		for(i=0;i<examples->length;i++)
@@ -882,7 +884,7 @@ double compute_classification_error(vector_t* classifiers, vector_t* examples, d
 		{
 			example_t* example=(example_t*)vector_get(examples,i);
 			//fprintf(stdout,"%d",i);
-			if(output_weights)fprintf(stdout,"iteration=%zd example=%d weights:\n",classifiers->length, i);
+			if(output_weights)fprintf(stdout,"iteration=%zd example=%d weights:\n", (size_t)classifier_id+1, i);
 			for(l=0;l<num_classes;l++)
 			{
 				example->weight[l]/=normalization;
@@ -1443,6 +1445,7 @@ vector_t* load_model(vector_t* templates, vector_t* classes, char* filename, int
 				vector_push(current->template->classifiers,current);
 				current->column=template->column;
 				current->threshold=NAN;
+				current->objective=NAN;
 				current->token=0;
 				current->type=0;
 				current->c0=NULL;
@@ -1556,6 +1559,16 @@ vector_t* load_model(vector_t* templates, vector_t* classes, char* filename, int
 
 void save_model(vector_t* classifiers, vector_t* classes, char* filename, int pack_model, int optimal_iterations)
 {
+	if(file_test(filename, "f"))
+	{
+		string_t* backup_name = string_new(filename);
+		string_append_cstr(backup_name, ".previous");
+		if(rename(filename, backup_name->data) == -1)
+		{
+			warn("could not backup previous model to \"%s\"", backup_name->data);
+		}
+		string_free(backup_name);
+	}
 	FILE* output=fopen(filename,"w");
 	if(output==NULL)die("could not output model in \"%s\"",filename);
 	int i;
@@ -1653,6 +1666,7 @@ void usage(char* program_name)
 	fprintf(stderr,"  --pack-model            pack model (for boostexter compatibility)\n");
 	fprintf(stderr,"  --output-weights        output training examples weights at each iteration\n");
 	fprintf(stderr,"  --model <model>         save/load the model to/from this file instead of <stem>.shyp\n");
+	fprintf(stderr,"  --resume                resume training from a previous model (can use another dataset for adaptation)\n");
 	fprintf(stderr,"  --train <file>          bypass the <stem>.data filename to specify training examples\n");
 	//fprintf(stderr,"  --test <file>           output additional error rate from an other file during training (can be used multiple times, not implemented)\n");
 	fprintf(stderr,"  --names <file>          use this column description file instead of <stem>.names\n");
@@ -1710,6 +1724,7 @@ int main(int argc, char** argv)
 	int save_model_at_each_iteration=0;
 	int no_unk_ngrams=0;
 	int sequence_classification = 0;
+	int resume_training = 0;
 	string_t* model_name=NULL;
 	string_t* data_filename=NULL;
 	string_t* names_filename=NULL;
@@ -1776,6 +1791,10 @@ int main(int argc, char** argv)
 		else if(string_eq_cstr(arg,"--interruptible"))
 		{
 			save_model_at_each_iteration=1;
+		}
+		else if(string_eq_cstr(arg,"--resume"))
+		{
+			resume_training = 1;
 		}
 		else if(string_eq_cstr(arg,"-S") && stem==NULL)
 		{
@@ -2349,10 +2368,71 @@ int main(int argc, char** argv)
 	}
 #endif
 	int iteration=0;
-	vector_t* classifiers=vector_new(maximum_iterations);
 	double theorical_error=1.0;
 	double minimum_test_error=1.0;
-	for(iteration=0;iteration<maximum_iterations;iteration++)
+	vector_t* classifiers = NULL;
+	if(resume_training == 0)
+	{
+		classifiers = vector_new(maximum_iterations);
+	}
+	else
+	{
+		classifiers=load_model(templates, classes, model_name->data, -1);
+		for(; iteration<classifiers->length; iteration++)
+		{
+			weakclassifier_t* classifier = vector_get(classifiers, iteration);
+			double error=compute_classification_error(classifiers, examples, iteration, sum_of_weights, classes->length); // compute error rate and update weights
+			double dev_error=NAN;
+			if(dev_examples!=NULL)
+			{
+				dev_error = compute_test_error(classifiers, dev_examples, iteration, classes->length); // compute error rate on test
+				if(optimal_iterations!=0 && dev_error<minimum_test_error)
+				{
+					minimum_test_error=dev_error;
+					optimal_iterations=iteration+1;
+				}
+			}
+			double test_error=NAN;
+			if(test_examples!=NULL) test_error = compute_test_error(classifiers, test_examples, iteration, classes->length); // compute error rate on test
+			if(dev_examples==NULL && test_examples!=NULL)
+			{
+				if(optimal_iterations!=0 && test_error<minimum_test_error)
+				{
+					minimum_test_error=test_error;
+					optimal_iterations=iteration+1;
+				}
+			}
+			// display result "a la" boostexter
+			if(verbose==1)
+			{
+				char* token="";
+				if(classifier->type==CLASSIFIER_TYPE_TEXT)
+				{
+					tokeninfo_t* tokeninfo=(tokeninfo_t*)vector_get(classifier->template->tokens,classifier->token);
+					token=tokeninfo->key;
+				}
+				if(classifier->type==CLASSIFIER_TYPE_THRESHOLD)
+				{
+					fprintf(stdout,"\n%s:%s\n",classifier->template->name->data,token);
+					fprintf(stdout,"Threshold: %7.3g\n",classifier->threshold);
+					classifier->c0[0]=-1e-11;
+					fprintf(stdout,"C0: ");for(i=0;i<classes->length;i++)fprintf(stdout," % 4.3f ",classifier->c0[i]); fprintf(stdout,"\n");
+					fprintf(stdout,"C1: ");for(i=0;i<classes->length;i++)fprintf(stdout," % 4.3f ",classifier->c1[i]); fprintf(stdout,"\n");
+					fprintf(stdout,"C2: ");for(i=0;i<classes->length;i++)fprintf(stdout," % 4.3f ",classifier->c2[i]); fprintf(stdout,"\n");
+				}
+				else if(classifier->type==CLASSIFIER_TYPE_TEXT)
+				{
+					fprintf(stdout,"\n%s:%s \n",classifier->template->name->data,token);
+					fprintf(stdout,"C0: ");for(i=0;i<classes->length;i++)fprintf(stdout," % 4.3f ",classifier->c1[i]); fprintf(stdout,"\n");
+					fprintf(stdout,"C1: ");for(i=0;i<classes->length;i++)fprintf(stdout," % 4.3f ",classifier->c2[i]); fprintf(stdout,"\n");
+				}
+			}
+			//theorical_error*=classifier->objective;
+			theorical_error=NAN;
+			fprintf(stdout,"rnd %d: wh-err= %f th-err= %f dev= %f test= %f train= %f\n",iteration+1,classifier->objective,theorical_error,dev_error,test_error,error);
+		}
+	}
+	for(;iteration<maximum_iterations;iteration++)
 	{
 #ifdef USE_THREADS
 		LOCK(toolbox->next_column);
@@ -2430,12 +2510,11 @@ int main(int argc, char** argv)
 #endif
 		vector_push(classifiers,classifier);
 		if(iteration==maximum_iterations-1) output_scores=1; else output_scores=0;
-		double error=compute_classification_error(classifiers, examples, sum_of_weights, classes->length); // compute error rate and update weights
+		double error=compute_classification_error(classifiers, examples, iteration, sum_of_weights, classes->length); // compute error rate and update weights
 		double dev_error=NAN;
-		if(dev_examples!=NULL)dev_error = compute_test_error(classifiers, dev_examples, classes->length); // compute error rate on dev
 		if(dev_examples!=NULL)
 		{
-			dev_error = compute_test_error(classifiers, dev_examples, classes->length); // compute error rate on test
+			dev_error = compute_test_error(classifiers, dev_examples, iteration, classes->length); // compute error rate on test
 			if(optimal_iterations!=0 && dev_error<minimum_test_error)
 			{
 				minimum_test_error=dev_error;
@@ -2443,7 +2522,7 @@ int main(int argc, char** argv)
 			}
 		}
 		double test_error=NAN;
-		if(test_examples!=NULL) test_error = compute_test_error(classifiers, test_examples, classes->length); // compute error rate on test
+		if(test_examples!=NULL) test_error = compute_test_error(classifiers, test_examples, iteration, classes->length); // compute error rate on test
 		if(dev_examples==NULL && test_examples!=NULL)
 		{
 			if(optimal_iterations!=0 && test_error<minimum_test_error)
@@ -2536,6 +2615,7 @@ int main(int argc, char** argv)
 					vector_free(example->discrete_features[j]);
 			FREE(example->discrete_features);
 			FREE(example->score);
+			FREE(example->classes);
 			FREE(example);
 		}
 		vector_free(test_examples);
@@ -2545,6 +2625,7 @@ int main(int argc, char** argv)
 		example_t* example=(example_t*)vector_get(examples,i);
 		FREE(example->weight);
 		FREE(example->score);
+		FREE(example->classes);
 		FREE(example);
 	}
 	vector_free(examples);

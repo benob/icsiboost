@@ -33,7 +33,7 @@
 
 #MAKEFLAGS=-s
 
-SOURCES = $(icsiboost_SOURCES) $(perceptron_SOURCES) $(utils_test_SOURCES)
+SOURCES = $(icsiboost_SOURCES) $(utils_test_SOURCES)
 
 srcdir = @srcdir@
 top_srcdir = @top_srcdir@
@@ -55,7 +55,7 @@ POST_INSTALL = :
 NORMAL_UNINSTALL = :
 PRE_UNINSTALL = :
 POST_UNINSTALL = :
-bin_PROGRAMS = icsiboost$(EXEEXT) perceptron$(EXEEXT)
+bin_PROGRAMS = icsiboost$(EXEEXT)
 check_PROGRAMS = utils_test$(EXEEXT)
 subdir = src
 DIST_COMMON = $(srcdir)/Makefile.am $(srcdir)/Makefile.in
@@ -75,11 +75,6 @@ am__objects_1 = vector.$(OBJEXT) string.$(OBJEXT) hashtable.$(OBJEXT) \
 am_icsiboost_OBJECTS = icsiboost.$(OBJEXT) $(am__objects_1)
 icsiboost_OBJECTS = $(am_icsiboost_OBJECTS)
 icsiboost_DEPENDENCIES =
-am__objects_2 = examples.$(OBJEXT)
-am_perceptron_OBJECTS = perceptron.$(OBJEXT) $(am__objects_1) \
-	$(am__objects_2)
-perceptron_OBJECTS = $(am_perceptron_OBJECTS)
-perceptron_DEPENDENCIES =
 am_utils_test_OBJECTS = utils_test.$(OBJEXT) $(am__objects_1)
 utils_test_OBJECTS = $(am_utils_test_OBJECTS)
 utils_test_DEPENDENCIES =
@@ -90,10 +85,8 @@ COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
 	$(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
 CCLD = $(CC)
 LINK = $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o $@
-SOURCES = $(icsiboost_SOURCES) $(perceptron_SOURCES) \
-	$(utils_test_SOURCES)
-DIST_SOURCES = $(icsiboost_SOURCES) $(perceptron_SOURCES) \
-	$(utils_test_SOURCES)
+SOURCES = $(icsiboost_SOURCES) $(utils_test_SOURCES)
+DIST_SOURCES = $(icsiboost_SOURCES) $(utils_test_SOURCES)
 ETAGS = etags
 CTAGS = ctags
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
@@ -171,7 +164,7 @@ sysconfdir = @sysconfdir@
 target_alias = @target_alias@
 
 # should move to -Werror (all warnings are errors)
-INCLUDES = -Wall -Werror-implicit-function-declaration
+INCLUDES = -Wall -Werror-implicit-function-declaration -L/opt/local/lib
 utils = utils/vector.c utils/string.c utils/hashtable.c utils/array.c \
 	utils/mapped.c utils/threads.c utils/debug.c utils/file.c \
 	utils/vector.h utils/string.h utils/hashtable.h utils/array.h \
@@ -247,9 +240,6 @@ clean-checkPROGRAMS:
 icsiboost$(EXEEXT): $(icsiboost_OBJECTS) $(icsiboost_DEPENDENCIES) 
 	@rm -f icsiboost$(EXEEXT)
 	$(LINK) $(icsiboost_LDFLAGS) $(icsiboost_OBJECTS) $(icsiboost_LDADD) $(LIBS)
-perceptron$(EXEEXT): $(perceptron_OBJECTS) $(perceptron_DEPENDENCIES) 
-	@rm -f perceptron$(EXEEXT)
-	$(LINK) $(perceptron_LDFLAGS) $(perceptron_OBJECTS) $(perceptron_LDADD) $(LIBS)
 utils_test$(EXEEXT): $(utils_test_OBJECTS) $(utils_test_DEPENDENCIES) 
 	@rm -f utils_test$(EXEEXT)
 	$(LINK) $(utils_test_LDFLAGS) $(utils_test_OBJECTS) $(utils_test_LDADD) $(LIBS)
@@ -262,12 +252,10 @@ distclean-compile:
 
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/array.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/debug.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/examples.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/file.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/hashtable.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/icsiboost.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mapped.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/perceptron.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/string.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/threads.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/utils_test.Po@am__quote@

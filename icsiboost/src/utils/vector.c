@@ -21,6 +21,9 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #include <string.h>
 #include <math.h>
 
+#define VECTOR_RESIZE_FACTOR 3/2
+#define VECTOR_RESIZE_LIMIT (256*1024)
+
 // implementations for vector of void*
 vector_t* vector_new(size_t initialSize) { return _vector_new(initialSize,sizeof(void*)); }
 void vector_push(vector_t* v, void* value) { _vector_push(v,&value); }
@@ -43,8 +46,10 @@ size_t vector_memory_size(vector_t* input)
 
 void _vector_resize(vector_t* v,size_t newSize)
 {
+	//fprintf(stderr,"resize %p %d\n",v, newSize);
+
 	if(newSize==v->size)return;
-	if(newSize<1)newSize=1;
+	if(newSize<sizeof(int))newSize=sizeof(int);
 	v->data=REALLOC(v->data,v->element_size*newSize);
 	/*void* newData=MALLOC(v->element_size*newSize);
 	if(v->data!=NULL)
@@ -72,7 +77,13 @@ void _vector_push(vector_t* v, void* data)
 {
 	if(v->length>=v->size)
 	{
-		_vector_resize(v,v->size+v->size/2+1);
+		int newSize=v->size*VECTOR_RESIZE_FACTOR+1;
+#ifdef VECTOR_RESIZE_LIMIT
+		if((newSize*v->element_size)/VECTOR_RESIZE_LIMIT>=(v->element_size*v->size)/VECTOR_RESIZE_LIMIT+1)
+			newSize = (((v->element_size*v->size)/VECTOR_RESIZE_LIMIT+1)*VECTOR_RESIZE_LIMIT)/v->element_size;
+#endif
+		_vector_resize(v,newSize);
+		//_vector_resize(v,v->size*VECTOR_RESIZE_FACTOR+1);
 	}
 	memcpy(v->data+v->length*v->element_size,data,v->element_size);
 	v->length++;
@@ -125,7 +136,7 @@ void vector_append(vector_t* v,vector_t* u)
 #ifdef DEBUG
 	if(v->element_size!=u->element_size)warn("vector_append(%p,%p), different element size (%zd!=%zd)",v,u,v->element_size,u->element_size);
 #endif
-	if(v->length+u->length>=v->size)_vector_resize(v,((v->length+u->length)*3)/2+1);
+	if(v->length+u->length>=v->size)_vector_resize(v,(v->length+u->length)*VECTOR_RESIZE_FACTOR+1);
 	memmove(v->data+v->element_size*v->length,u->data,v->element_size*(u->length));
 	v->length+=u->length;
 }
@@ -135,7 +146,7 @@ void vector_prepend(vector_t* v,vector_t* u)
 #ifdef DEBUG
 	if(v->element_size!=u->element_size)warn("vector_prepend(%p,%p), different element size (%zd!=%zd)",v,u,v->element_size,u->element_size);
 #endif
-	if(v->length+u->length>=v->size)_vector_resize(v,((v->length+u->length)*3)/2+1);
+	if(v->length+u->length>=v->size)_vector_resize(v,(v->length+u->length)*VECTOR_RESIZE_FACTOR+1);
 	memmove(v->data+v->element_size*(u->length),v->data,v->element_size*(v->length));
 	memmove(v->data,u->data,v->element_size*(u->length));
 	v->length+=u->length;
@@ -147,7 +158,7 @@ void _vector_insert_element(vector_t* v, int index, void* value)
 	else if(index>=v->length) _vector_push(v, value);
 	else
 	{
-		if(v->length>=v->size) _vector_resize(v,v->size+v->size/2+1);
+		if(v->length>=v->size) _vector_resize(v,v->size*VECTOR_RESIZE_FACTOR+1);
 		memmove(v->data+v->element_size*(index+1),v->data+v->element_size*index,v->element_size*(v->length-index-1));
 		v->length++;
 		memcpy(v->data+v->element_size*index,value,v->element_size);
@@ -165,7 +176,7 @@ void vector_insert(vector_t* v, size_t index, vector_t* peer)
 	else {
 		if(v->length+peer->length>=v->size)
 		{
-			_vector_resize(v,v->size+peer->size+v->size/2+1);
+			_vector_resize(v,v->size+peer->size*VECTOR_RESIZE_FACTOR+1);
 		}
 		memmove(v->data+v->element_size*(index+peer->length),v->data+v->element_size*(index),v->element_size*(v->length-index-1));
 		v->length+=peer->length;

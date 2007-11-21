@@ -42,6 +42,8 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 // you dont'want to use the garbage collector => not stable yet
 //#define USE_GC
 
+extern int __memory;
+
 #ifdef USE_GC
 #include "gc.h"
 #define MALLOC(s) GC_MALLOC(s)
