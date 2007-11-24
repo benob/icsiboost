@@ -828,13 +828,16 @@ double compute_classification_error(vector_t* classifiers, vector_t* examples, i
 	}
 	else if(classifier->type==CLASSIFIER_TYPE_TEXT)
 	{
-		tokeninfo_t* tokeninfo=(tokeninfo_t*)vector_get(classifier->template->tokens,classifier->token);
 		int* seen_examples=MALLOC(sizeof(int)*examples->length);
 		memset(seen_examples,0,examples->length*sizeof(int));
-		for(i=0;i<tokeninfo->examples->length;i++)
+		tokeninfo_t* tokeninfo=(tokeninfo_t*)vector_get(classifier->template->tokens,classifier->token);
+		if(tokeninfo != NULL || tokeninfo->examples != NULL)
 		{
-			int32_t example_id=vector_get_int32_t(tokeninfo->examples,i);
-			seen_examples[example_id]=1;
+			for(i=0;i<tokeninfo->examples->length;i++)
+			{
+				int32_t example_id=vector_get_int32_t(tokeninfo->examples,i);
+				seen_examples[example_id]=1;
+			}
 		}
 		for(i=0;i<examples->length;i++)
 		{
@@ -1470,7 +1473,7 @@ vector_t* load_model(vector_t* templates, vector_t* classes, char* filename, int
 							tokeninfo->id = template->tokens->length;
 							tokeninfo->key = strdup(word->data);
 							tokeninfo->count=0;
-							tokeninfo->examples=NULL;
+							tokeninfo->examples=vector_new(1);
 							hashtable_set(template->dictionary, word->data, word->length, tokeninfo);
 							vector_push(template->tokens, tokeninfo);
 						}

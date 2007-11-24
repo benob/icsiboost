@@ -11,7 +11,8 @@ while(<>)
 			$message=~s/^[\s\n\r]+//;
 			$message=~s/[\s\n\r]+$//;
 			$message=~s/\*/{{{*}}}/g;
-			print "  * $revision $author $timestamp\n  _${message}_\n";
+			$message=~s/_/{{{_}}}/g;
+			print "  * *$revision* $author $timestamp\n  _${message}_\n";
 			$message="";
 		}
 	}
