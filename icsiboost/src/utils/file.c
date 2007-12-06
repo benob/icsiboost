@@ -31,7 +31,7 @@ int file_test(const char* name, const char* flags)
 	struct stat stat_result;
 	if(stat(name, &stat_result)==-1)
 	{
-		if(flags[0]!=FILE_EXISTS)warn("file_test(\"%s\",\"%s\") failed", name, flags);
+		//if(flags[0]!=FILE_EXISTS)warn("file_test(\"%s\",\"%s\") failed", name, flags);
 		return 0;
 	}
 	if(flags==NULL || flags[0]=='\0' || flags[1]!='\0')

@@ -1668,6 +1668,7 @@ void usage(char* program_name)
 	fprintf(stderr,"  --do-not-pack-model     do not pack model (this is the default behavior)\n");
 	fprintf(stderr,"  --pack-model            pack model (for boostexter compatibility)\n");
 	fprintf(stderr,"  --output-weights        output training examples weights at each iteration\n");
+	fprintf(stderr,"  --posteriors            output posterior probabilities instead of boosting scores\n");
 	fprintf(stderr,"  --model <model>         save/load the model to/from this file instead of <stem>.shyp\n");
 	fprintf(stderr,"  --resume                resume training from a previous model (can use another dataset for adaptation)\n");
 	fprintf(stderr,"  --train <file>          bypass the <stem>.data filename to specify training examples\n");
@@ -1728,6 +1729,7 @@ int main(int argc, char** argv)
 	int no_unk_ngrams=0;
 	int sequence_classification = 0;
 	int resume_training = 0;
+	int output_posteriors = 0;
 	string_t* model_name=NULL;
 	string_t* data_filename=NULL;
 	string_t* names_filename=NULL;
@@ -1782,6 +1784,10 @@ int main(int argc, char** argv)
 		else if(string_eq_cstr(arg,"--abstaining-stump"))
 		{
 			use_abstaining_text_stump = 1;
+		}
+		else if(string_eq_cstr(arg,"--posteriors"))
+		{
+			output_posteriors = 1;
 		}
 		else if(string_eq_cstr(arg,"--no-unknown-stump"))
 		{
@@ -2065,6 +2071,11 @@ int main(int argc, char** argv)
 		string_t* line=NULL;
 		int line_num=0;
 		string_t* previous_decision = string_new("?");
+		double decision_threshold = 0.0;
+		if(output_posteriors)
+		{
+			decision_threshold = 0.5;
+		}
 		while((line=string_readline(stdin))!=NULL)
 		{
 			line_num++;
@@ -2167,7 +2178,15 @@ int main(int argc, char** argv)
 				}
 				string_array_free(array_of_labels);
 			}
-			for(l=0; l<classes->length; l++)score[l]/=sum_of_alpha;
+			for(l=0; l<classes->length; l++)
+			{
+				score[l]/=sum_of_alpha;
+				if(output_posteriors)
+				{
+					score[l] = 1.0/(1.0+exp(-2*sum_of_alpha*score[l]));
+					score[l]-=decision_threshold;
+				}
+			}
 			if(!dryrun_mode)
 			{
 				if(sequence_classification == 1)
@@ -2191,7 +2210,7 @@ int main(int argc, char** argv)
 					int erroneous_example = 0;
 					for(l=0; l<classes->length; l++)
 					{
-						fprintf(stdout,"%.12f",score[l]);
+						fprintf(stdout,"%.12f",score[l]+decision_threshold);
 						if(l<classes->length-1)fprintf(stdout," ");
 						if((score[l]<0 && example_classes[l]==1))erroneous_example = 1;
 					}
@@ -2224,7 +2243,7 @@ int main(int argc, char** argv)
 						{
 							string_t* class=vector_get(classes,l);
 							fprintf(stdout,"%s%s % 5f : %s \n", example_classes[l]==1?"*":" ",
-									(score[l]>0?">":(example_classes[l]==1?"*":" ")),score[l],class->data);
+									(score[l]>0?">":(example_classes[l]==1?"*":" ")),score[l]+decision_threshold,class->data);
 							if((score[l]<0 && example_classes[l]==1))
 							{
 								erroneous_example=1;
