@@ -1475,6 +1475,7 @@ vector_t* load_model(vector_t* templates, vector_t* classes, char* filename, int
 		if(num_classifiers==-1)
 		{
 			num_classifiers=string_to_int32(line);
+			if(num_iterations_to_load == -1) num_iterations_to_load = num_classifiers;
 		}
 		else if(current==NULL)
 		{
@@ -1655,10 +1656,10 @@ void save_model(vector_t* classifiers, vector_t* classes, char* filename, int pa
 		}
 		hashtable_free(packed_classifiers);
 	}
-	fprintf(output,"%d\n\n",num_classifiers);
+	fprintf(output,"%d\n\n",optimal_iterations!=0 ? optimal_iterations : num_classifiers);
 	for(i=0; i<classifiers->length; i++)
 	{
-		if(optimal_iterations!=0 && i>optimal_iterations+1)break;
+		//if(optimal_iterations!=0 && i>optimal_iterations+1)break;
 		weakclassifier_t* classifier=(weakclassifier_t*)vector_get(classifiers,i);
 		if(classifier==NULL)continue;
 		fprintf(output,"   %.12f Text:",classifier->alpha);
@@ -2187,7 +2188,9 @@ int main(int argc, char** argv)
 			 model_name = string_copy(stem);
 			string_append_cstr(model_name, ".shyp");
 		}
-		classifiers=load_model(templates,classes,model_name->data, test_time_iterations);
+		classifiers = load_model(templates,classes,model_name->data, test_time_iterations);
+		//fprintf(stderr, "test_time_iterations: %d\n", test_time_iterations);
+		if(test_time_iterations > classifiers->length || test_time_iterations == -1) test_time_iterations = classifiers->length;
 		double sum_of_alpha=0;
 		int errors=0;
 		int by_class_errors[classes->length];
