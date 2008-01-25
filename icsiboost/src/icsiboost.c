@@ -123,14 +123,14 @@ typedef struct template { // a column definition
 } template_t;
 
 typedef struct example { // an instance
-	//vector_t* features;            // vector of (int or float according to templates)
 	int32_t* classes;
 	int num_classes;
-	double* weight;                // example weight by class
 	double* score;                 // example score by class, updated iteratively
+	double* weight;                // example weight by class
+	//vector_t* features;            // vector of (int or float according to templates)
 } example_t;
 
-typedef struct test_example { // a test instance (not very memory efficicent)
+typedef struct test_example { // a test instance (not very memory efficicent) WARNING: has to be "compatible" with example_t up to score[]
 	int32_t* classes;
 	int num_classes;
 	double* score;
@@ -140,6 +140,7 @@ typedef struct test_example { // a test instance (not very memory efficicent)
 
 #define CLASSIFIER_TYPE_THRESHOLD 1
 #define CLASSIFIER_TYPE_TEXT 2
+#define CLASSIFIER_TYPE_EXTERNAL 3
 
 typedef struct weakclassifier { // a weak learner
 	template_t* template;          // the corresponding template
@@ -152,6 +153,10 @@ typedef struct weakclassifier { // a weak learner
 	double *c0;                    // weight by class, unknown
 	double *c1;                    // weight by class, token absent or below threshold
 	double *c2;                    // weight by class, token present or above threshold
+	string_t* external_filename;          // in case the classifier is external, use decisions from a file
+	double** external_train_decisions;    // - for training (format is one example per line, one score per class in the order of the names file)
+	double** external_dev_decisions;      // - for development
+	double** external_test_decisions;     // - for testing
 } weakclassifier_t;
 
 typedef struct tokeninfo { // store info about a word (or token)
@@ -784,6 +789,46 @@ double compute_test_error(vector_t* classifiers, vector_t* examples, int classif
 		if(erroneous_example == 1) error++;
 	}
 	return error/(examples->length);
+}
+
+int example_score_comparator_class = 0;
+double fmeasure_beta = 1;
+
+int example_score_comparator(const void* a, const void* b)
+{
+	test_example_t* aa = *((test_example_t**)a);
+	test_example_t* bb = *((test_example_t**)b);
+	if(aa->score[example_score_comparator_class] > bb->score[example_score_comparator_class])
+		return 1;
+	else if(aa->score[example_score_comparator_class] < bb->score[example_score_comparator_class])
+		return -1;
+	return 0;
+}
+
+double compute_max_fmeasure(vector_t* examples, int class_of_interest)
+{
+	double maximum_fmeasure = -1;
+	example_score_comparator_class = class_of_interest;
+	vector_sort(examples, example_score_comparator);
+	int i;
+	double true_below = 0;
+	double total_true = 0;
+	for(i=0; i<examples->length; i++)
+	{
+		test_example_t* example = vector_get(examples, i);
+		if(b_test(example, class_of_interest)) total_true++;
+	}
+	for(i=0; i<examples->length; i++)
+	{
+		test_example_t* example = vector_get(examples, i);
+		if(b_test(example, class_of_interest)) true_below++;
+		double precision = (total_true - true_below) / (examples->length - i);
+		double recall = (total_true - true_below) / total_true;
+		double fmeasure = fmeasure_beta * precision + recall > 0 ? (1 + fmeasure_beta) * recall * precision / (fmeasure_beta * precision + recall) : 0;
+		if(fmeasure > maximum_fmeasure)
+			maximum_fmeasure = fmeasure;
+	}
+	return maximum_fmeasure;
 }
 
 double compute_classification_error(vector_t* classifiers, vector_t* examples, int classifier_id, double** sum_of_weights, int num_classes)
@@ -1676,8 +1721,12 @@ void usage(char* program_name)
 	fprintf(stderr,"  --names <file>          use this column description file instead of <stem>.names\n");
 	fprintf(stderr,"  --ignore <columns>      ignore a comma separated list of columns (synonym with \"ignore\" in names file)\n");
 	fprintf(stderr,"  --ignore-regex <regex>  ignore columns that match a given regex\n");
+	fprintf(stderr,"  --only <columns>        use only a comma separated list of columns (synonym with \"ignore\" in names file)\n");
+	fprintf(stderr,"  --only-regex <regex>    use only columns that match a given regex\n");
 	fprintf(stderr,"  --interruptible         save model after each iteration in case of failure/interruption\n");
-	fprintf(stderr,"  --optimal-iterations    output the model at the iteration that minimizes dev error\n");
+	fprintf(stderr,"  --optimal-iterations    output the model at the iteration that minimizes dev error (or max fmeasure if specified)\n");
+	fprintf(stderr,"  --max-fmeasure <class>  display maximum f-measure of specified class instead of error rate\n");
+	fprintf(stderr,"  --fmeasure-beta <float> specify weight of recall compared to precision in f-measure\n");
 	fprintf(stderr,"  --abstaining-stump      use abstain-on-absence text stump (experimental)\n");
 	fprintf(stderr,"  --no-unknown-stump      use abstain-on-unknown continuous stump (experimental)\n");
 	fprintf(stderr,"  --sequence              generate column __SEQUENCE_PREVIOUS from previous prediction at test time (experimental)\n");
@@ -1694,12 +1743,18 @@ void print_version(char* program_name)
 	fprintf(stdout,"warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n");
 	fprintf(stdout,"Build: %s at %s"
 #ifdef __VERSION__
-		", gcc %s\n",
+		", gcc %s"
 #endif
-		__DATE__,__TIME__,
+		", %s\n" ,__DATE__ ,__TIME__ ,
 #ifdef __VERSION__
-		__VERSION__);
+		__VERSION__ ,
 #endif
+#ifdef __x86_64__
+		"64bit"
+#else
+		"32bit"
+#endif
+	);
 	fprintf(stdout,"Subversion info:\n");
 	fprintf(stdout,"$URL$\n"); // automatically updated by subversion
 	fprintf(stdout,"$Date$\n"); // automatically updated by subversion
@@ -1725,6 +1780,9 @@ int main(int argc, char** argv)
 	int text_expert_type=TEXT_EXPERT_NGRAM;
 	int text_expert_length=1;
 	int optimal_iterations=0;
+	int use_max_fmeasure = 0;
+	string_t* fmeasure_class = NULL;
+	int fmeasure_class_id = -1;
 	int save_model_at_each_iteration=0;
 	int no_unk_ngrams=0;
 	int sequence_classification = 0;
@@ -1735,6 +1793,8 @@ int main(int argc, char** argv)
 	string_t* names_filename=NULL;
 	array_t* ignore_columns=NULL;
 	string_t* ignore_regex=NULL;
+	array_t* only_columns=NULL;
+	string_t* only_regex=NULL;
 #ifdef USE_THREADS
 	int number_of_workers=1;
 #endif
@@ -1831,6 +1891,18 @@ int main(int argc, char** argv)
 			arg=(string_t*)array_shift(args);
 			ignore_regex=string_copy(arg);
 		}
+		else if(string_eq_cstr(arg,"--only"))
+		{
+			string_free(arg);
+			arg=(string_t*)array_shift(args);
+			only_columns=string_split(arg,",",NULL);
+		}
+		else if(string_eq_cstr(arg,"--only-regex"))
+		{
+			string_free(arg);
+			arg=(string_t*)array_shift(args);
+			only_regex=string_copy(arg);
+		}
 		else if(string_eq_cstr(arg,"--version"))
 		{
 			print_version(argv[0]);
@@ -1883,6 +1955,21 @@ int main(int argc, char** argv)
 		else if(string_eq_cstr(arg,"--optimal-iterations"))
 		{
 			optimal_iterations=1;
+		}
+		else if(string_eq_cstr(arg,"--max-fmeasure"))
+		{
+			string_free(arg);
+			arg = array_shift(args);
+			if(arg == NULL) die("ERROR: f-measure class not specified");
+			fmeasure_class = string_copy(arg);
+			use_max_fmeasure = 1;
+		}
+		else if(string_eq_cstr(arg,"--fmeasure-beta"))
+		{
+			string_free(arg);
+			arg = array_shift(args);
+			fmeasure_beta = string_to_double(arg);
+			if(isnan(fmeasure_beta)) die("f-measure beta \"%s\" is not valid", arg->data);
 		}
 		else if(string_eq_cstr(arg,"-N"))
 		{
@@ -2009,6 +2096,16 @@ int main(int argc, char** argv)
 				for(i=0;i<classes->length;i++)fprintf(stdout," %s",((string_t*)vector_get(classes,i))->data);
 				fprintf(stdout,"\n");
 			}
+			if(use_max_fmeasure)
+			{
+				fmeasure_class_id = -1;
+				for(i=0;i<classes->length;i++)
+				{
+					string_t* class = vector_get(classes, i);
+					if(string_eq(class, fmeasure_class)) fmeasure_class_id = i;
+				}
+				if(fmeasure_class_id == -1) die("invalid fmeasure class \"%s\"", fmeasure_class->data);
+			}
 		}
 		string_free(line);
 		line_num++;
@@ -2039,6 +2136,43 @@ int main(int argc, char** argv)
 			}
 		}
 		string_free(ignore_regex);
+	}
+	if(only_columns!=NULL)
+	{
+		for(i=0; i<templates->length; i++)
+		{
+			int j;
+			int will_be_ignored = 1;
+			template_t* template=vector_get(templates, i);
+			for(j=0; j<only_columns->length; j++)
+			{
+				string_t* column=(string_t*)array_get(only_columns, j);
+				if(string_eq(column, template->name))
+				{
+					will_be_ignored = 0;
+					break;
+				}
+			}
+			if(will_be_ignored)
+			{
+				template->type=FEATURE_TYPE_IGNORE;
+				if(verbose>0) { warn("ignoring column \"%s\"", template->name->data); }
+			}
+		}
+		string_array_free(only_columns);
+	}
+	if(only_regex!=NULL)
+	{
+		for(i=0; i<templates->length; i++)
+		{
+			template_t* template=vector_get(templates, i);
+			if(! string_match(template->name, only_regex->data, "n"))
+			{
+				template->type=FEATURE_TYPE_IGNORE;
+				if(verbose>0) { warn("ignoring column \"%s\"", template->name->data); }
+			}
+		}
+		string_free(only_regex);
 	}
 	vector_optimize(templates);
 	mapped_free(input);
@@ -2392,6 +2526,7 @@ int main(int argc, char** argv)
 	int iteration=0;
 	double theorical_error=1.0;
 	double minimum_test_error=1.0;
+	if(use_max_fmeasure) minimum_test_error = 0.0;
 	vector_t* classifiers = NULL;
 	if(resume_training == 0)
 	{
@@ -2404,21 +2539,27 @@ int main(int argc, char** argv)
 		{
 			weakclassifier_t* classifier = vector_get(classifiers, iteration);
 			double error=compute_classification_error(classifiers, examples, iteration, sum_of_weights, classes->length); // compute error rate and update weights
+			if(use_max_fmeasure) error = compute_max_fmeasure(examples, fmeasure_class_id);
 			double dev_error=NAN;
 			if(dev_examples!=NULL)
 			{
 				dev_error = compute_test_error(classifiers, dev_examples, iteration, classes->length); // compute error rate on test
-				if(optimal_iterations!=0 && dev_error<minimum_test_error)
+				if(use_max_fmeasure) dev_error = compute_max_fmeasure(dev_examples, fmeasure_class_id);
+				if(optimal_iterations!=0 && ((!use_max_fmeasure && dev_error<minimum_test_error) || (use_max_fmeasure && dev_error>minimum_test_error)))
 				{
 					minimum_test_error=dev_error;
 					optimal_iterations=iteration+1;
 				}
 			}
 			double test_error=NAN;
-			if(test_examples!=NULL) test_error = compute_test_error(classifiers, test_examples, iteration, classes->length); // compute error rate on test
+			if(test_examples!=NULL)
+			{
+				test_error = compute_test_error(classifiers, test_examples, iteration, classes->length); // compute error rate on test
+				if(use_max_fmeasure) test_error = compute_max_fmeasure(test_examples, fmeasure_class_id);
+			}
 			if(dev_examples==NULL && test_examples!=NULL)
 			{
-				if(optimal_iterations!=0 && test_error<minimum_test_error)
+				if(optimal_iterations!=0 && ((!use_max_fmeasure && test_error<minimum_test_error) || (use_max_fmeasure && test_error>minimum_test_error)))
 				{
 					minimum_test_error=test_error;
 					optimal_iterations=iteration+1;
@@ -2533,21 +2674,27 @@ int main(int argc, char** argv)
 		vector_push(classifiers,classifier);
 		if(iteration==maximum_iterations-1) output_scores=1; else output_scores=0;
 		double error=compute_classification_error(classifiers, examples, iteration, sum_of_weights, classes->length); // compute error rate and update weights
+		if(use_max_fmeasure) error = compute_max_fmeasure(examples, fmeasure_class_id);
 		double dev_error=NAN;
 		if(dev_examples!=NULL)
 		{
 			dev_error = compute_test_error(classifiers, dev_examples, iteration, classes->length); // compute error rate on test
-			if(optimal_iterations!=0 && dev_error<minimum_test_error)
+			if(use_max_fmeasure) dev_error = compute_max_fmeasure(dev_examples, fmeasure_class_id);
+			if(optimal_iterations!=0 && ((!use_max_fmeasure && dev_error<minimum_test_error) || (use_max_fmeasure && dev_error>minimum_test_error)))
 			{
 				minimum_test_error=dev_error;
 				optimal_iterations=iteration+1;
 			}
 		}
 		double test_error=NAN;
-		if(test_examples!=NULL) test_error = compute_test_error(classifiers, test_examples, iteration, classes->length); // compute error rate on test
+		if(test_examples!=NULL)
+		{
+			test_error = compute_test_error(classifiers, test_examples, iteration, classes->length); // compute error rate on test
+			if(use_max_fmeasure) test_error = compute_max_fmeasure(test_examples, fmeasure_class_id);
+		}
 		if(dev_examples==NULL && test_examples!=NULL)
 		{
-			if(optimal_iterations!=0 && test_error<minimum_test_error)
+			if(optimal_iterations!=0 && ((!use_max_fmeasure && test_error<minimum_test_error) || (use_max_fmeasure && test_error>minimum_test_error)))
 			{
 				minimum_test_error=test_error;
 				optimal_iterations=iteration+1;
@@ -2588,7 +2735,7 @@ int main(int argc, char** argv)
 	save_model(classifiers, classes, model_name->data,pack_model, optimal_iterations);
 	if(optimal_iterations!=0)
 	{
-		fprintf(stdout,"OPTIMAL ITERATIONS: %d, error=%f\n",optimal_iterations, minimum_test_error);
+		fprintf(stdout,"OPTIMAL ITERATIONS: %d, %s=%f\n", optimal_iterations, use_max_fmeasure ? "max_fmeasure" : "error", minimum_test_error);
 	}
 	string_free(model_name);
 
