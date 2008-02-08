@@ -1144,7 +1144,9 @@ vector_t* load_examples_multilabel(const char* filename, vector_t* templates, ve
 			}
 		}
 		string_t* last_token = array_get(array_of_tokens, templates->length);
-		array_t* array_of_labels = string_split(last_token, "(  *|\\.$)", NULL);
+		array_t* array_of_labels = string_split(last_token, "( *\\.$|  *)", NULL);
+		string_t* tmp = string_join_cstr("#", array_of_labels);
+		fprintf(stderr,"classes [%s]\n", tmp->data);
 		if(array_of_labels == NULL || array_of_labels->length<1)
 			die("wrong class definition \"%s\", line %d in %s", last_token->data, line_num, filename);
 		if(in_test)
@@ -2297,7 +2299,7 @@ int main(int argc, char** argv)
 			if(array_of_tokens->length > templates->length)
 			{
 				string_t* last_token = array_get(array_of_tokens, templates->length);
-				array_t* array_of_labels = string_split(last_token, "(  *|\\.$)", NULL);
+				array_t* array_of_labels = string_split(last_token, "( *\\.$|  *)", NULL);
 				int j;
 				for(j=0; j<array_of_labels->length; j++)
 				{
