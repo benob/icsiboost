@@ -805,10 +805,11 @@ int example_score_comparator(const void* a, const void* b)
 	return 0;
 }
 
-double compute_max_fmeasure(vector_t* examples, int class_of_interest)
+double compute_max_fmeasure(vector_t* working_examples, int class_of_interest)
 {
 	double maximum_fmeasure = -1;
 	example_score_comparator_class = class_of_interest;
+	vector_t* examples = vector_copy(working_examples);
 	vector_sort(examples, example_score_comparator);
 	int i;
 	double true_below = 0;
@@ -818,16 +819,22 @@ double compute_max_fmeasure(vector_t* examples, int class_of_interest)
 		test_example_t* example = vector_get(examples, i);
 		if(b_test(example, class_of_interest)) total_true++;
 	}
+	double previous_value = NAN;
 	for(i=0; i<examples->length; i++)
 	{
 		test_example_t* example = vector_get(examples, i);
+		if(example->score[class_of_interest] != previous_value) {
+			double precision = (total_true - true_below) / (examples->length - i);
+			double recall = (total_true - true_below) / total_true;
+			double fmeasure = fmeasure_beta * precision + recall > 0 ? (1 + fmeasure_beta) * recall * precision / (fmeasure_beta * precision + recall) : 0;
+			if(fmeasure > maximum_fmeasure)
+				maximum_fmeasure = fmeasure;
+			//fprintf(stdout, "EX: %d %f p=%f r=%f f=%f\n", i, example->score[class_of_interest], precision, recall, fmeasure);
+			previous_value = example->score[class_of_interest];
+		}
 		if(b_test(example, class_of_interest)) true_below++;
-		double precision = (total_true - true_below) / (examples->length - i);
-		double recall = (total_true - true_below) / total_true;
-		double fmeasure = fmeasure_beta * precision + recall > 0 ? (1 + fmeasure_beta) * recall * precision / (fmeasure_beta * precision + recall) : 0;
-		if(fmeasure > maximum_fmeasure)
-			maximum_fmeasure = fmeasure;
 	}
+	vector_free(examples);
 	return maximum_fmeasure;
 }
 
@@ -1145,8 +1152,8 @@ vector_t* load_examples_multilabel(const char* filename, vector_t* templates, ve
 		}
 		string_t* last_token = array_get(array_of_tokens, templates->length);
 		array_t* array_of_labels = string_split(last_token, "( *\\.$|  *)", NULL);
-		string_t* tmp = string_join_cstr("#", array_of_labels);
-		fprintf(stderr,"classes [%s]\n", tmp->data);
+		//string_t* tmp = string_join_cstr("#", array_of_labels);
+		//fprintf(stderr,"classes [%s]\n", tmp->data);
 		if(array_of_labels == NULL || array_of_labels->length<1)
 			die("wrong class definition \"%s\", line %d in %s", last_token->data, line_num, filename);
 		if(in_test)
