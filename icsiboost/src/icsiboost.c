@@ -1727,7 +1727,8 @@ void usage(char* program_name)
 	fprintf(stderr,"  --model <model>         save/load the model to/from this file instead of <stem>.shyp\n");
 	fprintf(stderr,"  --resume                resume training from a previous model (can use another dataset for adaptation)\n");
 	fprintf(stderr,"  --train <file>          bypass the <stem>.data filename to specify training examples\n");
-	//fprintf(stderr,"  --test <file>           output additional error rate from an other file during training (can be used multiple times, not implemented)\n");
+	fprintf(stderr,"  --dev <file>            bypass the <stem>.dev filename to specify development examples\n");
+	fprintf(stderr,"  --test <file>           bypass the <stem>.test filename to specify test examples\n");
 	fprintf(stderr,"  --names <file>          use this column description file instead of <stem>.names\n");
 	fprintf(stderr,"  --ignore <columns>      ignore a comma separated list of columns (synonym with \"ignore\" in names file)\n");
 	fprintf(stderr,"  --ignore-regex <regex>  ignore columns that match a given regex\n");
@@ -1800,6 +1801,8 @@ int main(int argc, char** argv)
 	int output_posteriors = 0;
 	string_t* model_name=NULL;
 	string_t* data_filename=NULL;
+	string_t* dev_filename=NULL;
+	string_t* test_filename=NULL;
 	string_t* names_filename=NULL;
 	array_t* ignore_columns=NULL;
 	string_t* ignore_regex=NULL;
@@ -1945,6 +1948,18 @@ int main(int argc, char** argv)
 			string_free(arg);
 			arg=(string_t*)array_shift(args);
 			data_filename=string_copy(arg);
+		}
+		else if(string_eq_cstr(arg,"--dev"))
+		{
+			string_free(arg);
+			arg=(string_t*)array_shift(args);
+			dev_filename=string_copy(arg);
+		}
+		else if(string_eq_cstr(arg,"--test"))
+		{
+			string_free(arg);
+			arg=(string_t*)array_shift(args);
+			test_filename=string_copy(arg);
 		}
 		else if(string_eq_cstr(arg,"--pack-model"))
 		{
@@ -2457,15 +2472,19 @@ int main(int argc, char** argv)
 
 // deactivated dev/test that don't work with the new indexed features (need separate handleing)
 
-	data_filename = string_copy(stem);
-	string_append_cstr(data_filename, ".dev");
-	dev_examples = load_examples_multilabel(data_filename->data, templates, classes, NULL, 0, 1, text_expert_type, text_expert_length, no_unk_ngrams);
-	string_free(data_filename);
+	if(dev_filename == NULL) {
+		dev_filename = string_copy(stem);
+		string_append_cstr(dev_filename, ".dev");
+	}
+	dev_examples = load_examples_multilabel(dev_filename->data, templates, classes, NULL, 0, 1, text_expert_type, text_expert_length, no_unk_ngrams);
+	string_free(dev_filename);
 
-	data_filename = string_copy(stem);
-	string_append_cstr(data_filename, ".test");
-	test_examples = load_examples_multilabel(data_filename->data, templates, classes, NULL, 0, 1, text_expert_type, text_expert_length, no_unk_ngrams);
-	string_free(data_filename);
+	if(test_filename == NULL) {
+		test_filename = string_copy(stem);
+		string_append_cstr(test_filename, ".test");
+	}
+	test_examples = load_examples_multilabel(test_filename->data, templates, classes, NULL, 0, 1, text_expert_type, text_expert_length, no_unk_ngrams);
+	string_free(test_filename);
 
 	if(model_name==NULL)
 	{
