@@ -2454,6 +2454,9 @@ int main(int argc, char** argv)
 		string_append_cstr(data_filename, ".data");
 	}
 	vector_t* examples = load_examples_multilabel(data_filename->data, templates, classes, class_priors, feature_count_cutoff, 0, text_expert_type, text_expert_length, no_unk_ngrams);
+	if(examples == NULL || examples->length == 0) {
+		die("no training examples found in \"%s\"", data_filename->data);
+	}
 	string_free(data_filename);
 
 	// generate a simple random sequence of example ids for sampleing
