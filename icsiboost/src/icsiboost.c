@@ -47,6 +47,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #include <time.h>
 #include <unistd.h>
 
+// this is not recommanded
 #ifdef USE_FLOATS
 #define double float
 #endif
@@ -805,7 +806,7 @@ int example_score_comparator(const void* a, const void* b)
 	return 0;
 }
 
-double compute_max_fmeasure(vector_t* working_examples, int class_of_interest)
+double compute_max_fmeasure(vector_t* working_examples, int class_of_interest, double* threshold)
 {
 	double maximum_fmeasure = -1;
 	example_score_comparator_class = class_of_interest;
@@ -827,8 +828,10 @@ double compute_max_fmeasure(vector_t* working_examples, int class_of_interest)
 			double precision = (total_true - true_below) / (examples->length - i);
 			double recall = (total_true - true_below) / total_true;
 			double fmeasure = fmeasure_beta * precision + recall > 0 ? (1 + fmeasure_beta) * recall * precision / (fmeasure_beta * precision + recall) : 0;
-			if(fmeasure > maximum_fmeasure)
+			if(fmeasure > maximum_fmeasure) {
 				maximum_fmeasure = fmeasure;
+				if(threshold != NULL) *threshold = (previous_value + example->score[class_of_interest]) / 2.0;
+			}
 			//fprintf(stdout, "EX: %d %f p=%f r=%f f=%f\n", i, example->score[class_of_interest], precision, recall, fmeasure);
 			previous_value = example->score[class_of_interest];
 		}
@@ -2480,6 +2483,11 @@ int main(int argc, char** argv)
 		string_append_cstr(dev_filename, ".dev");
 	}
 	dev_examples = load_examples_multilabel(dev_filename->data, templates, classes, NULL, 0, 1, text_expert_type, text_expert_length, no_unk_ngrams);
+	if(dev_examples != NULL && dev_examples->length == 0) {
+		warn("no dev examples found in \"%s\"", dev_filename->data);
+		vector_free(dev_examples);
+		dev_examples = NULL;
+	}
 	string_free(dev_filename);
 
 	if(test_filename == NULL) {
@@ -2487,6 +2495,11 @@ int main(int argc, char** argv)
 		string_append_cstr(test_filename, ".test");
 	}
 	test_examples = load_examples_multilabel(test_filename->data, templates, classes, NULL, 0, 1, text_expert_type, text_expert_length, no_unk_ngrams);
+	if(test_examples != NULL && test_examples->length == 0) {
+		warn("no test examples found in \"%s\"", test_filename->data);
+		vector_free(test_examples);
+		test_examples = NULL;
+	}
 	string_free(test_filename);
 
 	if(model_name==NULL)
@@ -2560,6 +2573,7 @@ int main(int argc, char** argv)
 	int iteration=0;
 	double theorical_error=1.0;
 	double minimum_test_error=1.0;
+	double optimal_iteration_threshold = NAN;
 	if(use_max_fmeasure) minimum_test_error = 0.0;
 	vector_t* classifiers = NULL;
 	if(resume_training == 0)
@@ -2573,23 +2587,25 @@ int main(int argc, char** argv)
 		{
 			weakclassifier_t* classifier = vector_get(classifiers, iteration);
 			double error=compute_classification_error(classifiers, examples, iteration, sum_of_weights, classes->length); // compute error rate and update weights
-			if(use_max_fmeasure) error = compute_max_fmeasure(examples, fmeasure_class_id);
+			if(use_max_fmeasure) error = compute_max_fmeasure(examples, fmeasure_class_id, NULL);
 			double dev_error=NAN;
+			double threshold = NAN;
 			if(dev_examples!=NULL)
 			{
 				dev_error = compute_test_error(classifiers, dev_examples, iteration, classes->length); // compute error rate on test
-				if(use_max_fmeasure) dev_error = compute_max_fmeasure(dev_examples, fmeasure_class_id);
+				if(use_max_fmeasure) dev_error = compute_max_fmeasure(dev_examples, fmeasure_class_id, &threshold);
 				if(optimal_iterations!=0 && ((!use_max_fmeasure && dev_error<minimum_test_error) || (use_max_fmeasure && dev_error>minimum_test_error)))
 				{
 					minimum_test_error=dev_error;
 					optimal_iterations=iteration+1;
+					optimal_iteration_threshold = threshold;
 				}
 			}
 			double test_error=NAN;
 			if(test_examples!=NULL)
 			{
 				test_error = compute_test_error(classifiers, test_examples, iteration, classes->length); // compute error rate on test
-				if(use_max_fmeasure) test_error = compute_max_fmeasure(test_examples, fmeasure_class_id);
+				if(use_max_fmeasure) test_error = compute_max_fmeasure(test_examples, fmeasure_class_id, &threshold);
 			}
 			if(dev_examples==NULL && test_examples!=NULL)
 			{
@@ -2597,6 +2613,7 @@ int main(int argc, char** argv)
 				{
 					minimum_test_error=test_error;
 					optimal_iterations=iteration+1;
+					optimal_iteration_threshold = threshold;
 				}
 			}
 			// display result "a la" boostexter
@@ -2671,16 +2688,16 @@ int main(int argc, char** argv)
 			if(template->type==FEATURE_TYPE_CONTINUOUS)
 			{
 				if(use_known_continuous_stump)
-					current=train_known_continuous_stump(1.0, template, toolbox->examples, toolbox->classes->length);
+					current=train_known_continuous_stump(1.0, template, examples, classes->length);
 				else
-					current=train_continuous_stump(1.0, template, toolbox->examples, toolbox->classes->length);
+					current=train_continuous_stump(1.0, template, examples, classes->length);
 			}
 			else if(template->type==FEATURE_TYPE_TEXT || template->type==FEATURE_TYPE_SET)
 			{
 				if(use_abstaining_text_stump)
-					current=train_abstaining_text_stump(1.0, template, toolbox->examples, toolbox->sum_of_weights, toolbox->classes->length);
+					current=train_abstaining_text_stump(1.0, template, examples, sum_of_weights, classes->length);
 				else
-					current=train_text_stump(1.0, template, toolbox->examples, toolbox->sum_of_weights, toolbox->classes->length);
+					current=train_text_stump(1.0, template, examples, sum_of_weights, classes->length);
 			}
 			// else => FEATURE_TYPE_IGNORE
 			if(current==NULL)continue;
@@ -2708,23 +2725,25 @@ int main(int argc, char** argv)
 		vector_push(classifiers,classifier);
 		if(iteration==maximum_iterations-1) output_scores=1; else output_scores=0;
 		double error=compute_classification_error(classifiers, examples, iteration, sum_of_weights, classes->length); // compute error rate and update weights
-		if(use_max_fmeasure) error = compute_max_fmeasure(examples, fmeasure_class_id);
+		if(use_max_fmeasure) error = compute_max_fmeasure(examples, fmeasure_class_id, NULL);
 		double dev_error=NAN;
+		double threshold = NAN;
 		if(dev_examples!=NULL)
 		{
 			dev_error = compute_test_error(classifiers, dev_examples, iteration, classes->length); // compute error rate on test
-			if(use_max_fmeasure) dev_error = compute_max_fmeasure(dev_examples, fmeasure_class_id);
+			if(use_max_fmeasure) dev_error = compute_max_fmeasure(dev_examples, fmeasure_class_id, &threshold);
 			if(optimal_iterations!=0 && ((!use_max_fmeasure && dev_error<minimum_test_error) || (use_max_fmeasure && dev_error>minimum_test_error)))
 			{
 				minimum_test_error=dev_error;
 				optimal_iterations=iteration+1;
+				optimal_iteration_threshold = threshold;
 			}
 		}
 		double test_error=NAN;
 		if(test_examples!=NULL)
 		{
 			test_error = compute_test_error(classifiers, test_examples, iteration, classes->length); // compute error rate on test
-			if(use_max_fmeasure) test_error = compute_max_fmeasure(test_examples, fmeasure_class_id);
+			if(use_max_fmeasure) test_error = compute_max_fmeasure(test_examples, fmeasure_class_id, &threshold);
 		}
 		if(dev_examples==NULL && test_examples!=NULL)
 		{
@@ -2732,6 +2751,7 @@ int main(int argc, char** argv)
 			{
 				minimum_test_error=test_error;
 				optimal_iterations=iteration+1;
+				optimal_iteration_threshold = threshold;
 			}
 		}
 		// display result "a la" boostexter
@@ -2769,7 +2789,11 @@ int main(int argc, char** argv)
 	save_model(classifiers, classes, model_name->data,pack_model, optimal_iterations);
 	if(optimal_iterations!=0)
 	{
-		fprintf(stdout,"OPTIMAL ITERATIONS: %d, %s=%f\n", optimal_iterations, use_max_fmeasure ? "max_fmeasure" : "error", minimum_test_error);
+		fprintf(stdout,"OPTIMAL ITERATIONS: %d, %s = %f", optimal_iterations, use_max_fmeasure ? "max_fmeasure" : "error", minimum_test_error);
+		optimal_iteration_threshold /= optimal_iterations;
+		if(output_posteriors) optimal_iteration_threshold = 1.0 / (1.0 + exp(-2.0 * optimal_iterations * optimal_iteration_threshold));
+		if(use_max_fmeasure) fprintf(stdout, ", threshold = %f\n", optimal_iteration_threshold);
+		else fprintf(stdout, "\n");
 	}
 	string_free(model_name);
 
