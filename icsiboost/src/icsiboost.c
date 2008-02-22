@@ -87,11 +87,12 @@ double LOG(double number)
 #define EXP(a) exp(a)
 #define LOG(a) log(a)
 
-inline double SQRT(double number)
+#define SQRT(number) sqrt(number)
+/*inline double SQRT(double number)
 {
 	if(number<0)return 0;
 	return sqrt(number);
-}
+}*/
 
 /*
 WARNING:
@@ -174,8 +175,9 @@ int output_scores=0;
 
 //int *random_sequence;
 
-//#define y_l(x,y) (x->class[0]==y?1.0:-1.0)    // y_l() from the paper
-inline double y_l(example_t* example, int label)
+#define y_l(x,y) (x->classes[y]?1.0:-1.0)    // y_l() from the paper
+//double y_l(example_t* example, int label) { return example->classes[label] ? 1.0 : -1.0; }
+/*inline double y_l(example_t* example, int label)
 {
 	int i;
 	for(i=0; i<example->num_classes; i++)
@@ -183,10 +185,11 @@ inline double y_l(example_t* example, int label)
 		if(example->classes[i] == label)return 1.0;
 	}
 	return -1.0;
-}
+}*/
 
-//#define b(x,y) (x->class[0]==y?1:0)           // b() from the paper (binary class match)
-inline int b(example_t* example, int label)
+#define b(x,y) (x->classes[y]?1:0)           // b() from the paper (binary class match)
+//int b(example_t* example, int label) { return example->classes[label] ? 1 : 0; }
+/*inline int b(example_t* example, int label)
 {
 	int i;
 	for(i=0; i<example->num_classes; i++)
@@ -194,17 +197,7 @@ inline int b(example_t* example, int label)
 		if(example->classes[i] == label)return 1;
 	}
 	return 0;
-}
-
-inline int b_test(test_example_t* example, int label)
-{
-	int i;
-	for(i=0; i<example->num_classes; i++)
-	{
-		if(example->classes[i] == label)return 1;
-	}
-	return 0;
-}
+}*/
 
 weakclassifier_t* train_text_stump(double min_objective, template_t* template, vector_t* examples, double** sum_of_weights, int num_classes)
 {
@@ -785,7 +778,7 @@ double compute_test_error(vector_t* classifiers, vector_t* examples, int classif
 		//if(i<10)fprintf(stdout,"%d %f %f\n", i, example->score[0], example->score[1]);
 		for(l=0;l<num_classes;l++) // selected class = class with highest score
 		{
-			if(example->score[l]>0.0 && !b_test(example,l)) erroneous_example = 1;
+			if(example->score[l]>0.0 && !b((example_t*)example,l)) erroneous_example = 1;
 		}
 		if(erroneous_example == 1) error++;
 	}
@@ -818,7 +811,7 @@ double compute_max_fmeasure(vector_t* working_examples, int class_of_interest, d
 	for(i=0; i<examples->length; i++)
 	{
 		test_example_t* example = vector_get(examples, i);
-		if(b_test(example, class_of_interest)) total_true++;
+		if(b((example_t*)example, class_of_interest)) total_true++;
 	}
 	double previous_value = NAN;
 	for(i=0; i<examples->length; i++)
@@ -835,7 +828,7 @@ double compute_max_fmeasure(vector_t* working_examples, int class_of_interest, d
 			//fprintf(stdout, "EX: %d %f p=%f r=%f f=%f\n", i, example->score[class_of_interest], precision, recall, fmeasure);
 			previous_value = example->score[class_of_interest];
 		}
-		if(b_test(example, class_of_interest)) true_below++;
+		if(b((example_t*)example, class_of_interest)) true_below++;
 	}
 	vector_free(examples);
 	return maximum_fmeasure;
@@ -1161,13 +1154,17 @@ vector_t* load_examples_multilabel(const char* filename, vector_t* templates, ve
 			die("wrong class definition \"%s\", line %d in %s", last_token->data, line_num, filename);
 		if(in_test)
 		{
-			test_example->num_classes = array_of_labels->length;
-			test_example->classes = MALLOC(sizeof(int32_t) * test_example->num_classes);
+			//test_example->num_classes = array_of_labels->length;
+			//test_example->classes = MALLOC(sizeof(int32_t) * test_example->num_classes);
+			test_example->num_classes = classes->length;
+			test_example->classes = MALLOC(sizeof(int32_t) * classes->length);
 		}
 		else
 		{
-			example->num_classes = array_of_labels->length;
-			example->classes = MALLOC(sizeof(int32_t) * example->num_classes);
+			//example->num_classes = array_of_labels->length;
+			//example->classes = MALLOC(sizeof(int32_t) * example->num_classes);
+			example->classes = MALLOC(sizeof(int32_t) * classes->length);
+			example->num_classes = classes->length;
 		}
 		for(i=0; i<array_of_labels->length; i++)
 		{
@@ -1177,8 +1174,10 @@ vector_t* load_examples_multilabel(const char* filename, vector_t* templates, ve
 				string_t* other = vector_get(classes, j);
 				if(string_eq(class, other))
 				{
-					if(in_test) test_example->classes[i] = j;
-					else example->classes[i] = j;
+					/*if(in_test) test_example->classes[i] = j;
+					else example->classes[i] = j;*/
+					if(in_test) test_example->classes[j] = 1;
+					else example->classes[j] = 1;
 					break;
 				}
 			}
@@ -1203,7 +1202,8 @@ vector_t* load_examples_multilabel(const char* filename, vector_t* templates, ve
 				example_t* example=(example_t*)vector_get(examples,i);
 				for(j=0; j<example->num_classes; j++)
 				{
-					class_priors[example->classes[j]]++;
+					if(example->classes[j]) class_priors[j] ++;
+					//class_priors[example->classes[j]]++;
 				}
 			}
 			for(l=0; l<classes->length; l++)
