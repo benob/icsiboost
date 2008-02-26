@@ -175,7 +175,7 @@ int output_scores=0;
 
 //int *random_sequence;
 
-#define y_l(x,y) (x->classes[y]?1.0:-1.0)    // y_l() from the paper
+#define y_l(x,y) (x->classes[y] == 1?1.0:-1.0)    // y_l() from the paper
 //double y_l(example_t* example, int label) { return example->classes[label] ? 1.0 : -1.0; }
 /*inline double y_l(example_t* example, int label)
 {
@@ -187,7 +187,7 @@ int output_scores=0;
 	return -1.0;
 }*/
 
-#define b(x,y) (x->classes[y]?1:0)           // b() from the paper (binary class match)
+#define b(x,y) (x->classes[y] == 1?1:0)           // b() from the paper (binary class match)
 //int b(example_t* example, int label) { return example->classes[label] ? 1 : 0; }
 /*inline int b(example_t* example, int label)
 {
@@ -778,7 +778,7 @@ double compute_test_error(vector_t* classifiers, vector_t* examples, int classif
 		//if(i<10)fprintf(stdout,"%d %f %f\n", i, example->score[0], example->score[1]);
 		for(l=0;l<num_classes;l++) // selected class = class with highest score
 		{
-			if(example->score[l]>0.0 && !b((example_t*)example,l)) erroneous_example = 1;
+			if(example->score[l]>0.0 && !b(example,l)) erroneous_example = 1;
 		}
 		if(erroneous_example == 1) error++;
 	}
@@ -811,7 +811,7 @@ double compute_max_fmeasure(vector_t* working_examples, int class_of_interest, d
 	for(i=0; i<examples->length; i++)
 	{
 		test_example_t* example = vector_get(examples, i);
-		if(b((example_t*)example, class_of_interest)) total_true++;
+		if(b(example, class_of_interest)) total_true++;
 	}
 	double previous_value = NAN;
 	for(i=0; i<examples->length; i++)
@@ -828,7 +828,7 @@ double compute_max_fmeasure(vector_t* working_examples, int class_of_interest, d
 			//fprintf(stdout, "EX: %d %f p=%f r=%f f=%f\n", i, example->score[class_of_interest], precision, recall, fmeasure);
 			previous_value = example->score[class_of_interest];
 		}
-		if(b((example_t*)example, class_of_interest)) true_below++;
+		if(b(example, class_of_interest)) true_below++;
 	}
 	vector_free(examples);
 	return maximum_fmeasure;
