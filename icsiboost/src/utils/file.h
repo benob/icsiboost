@@ -70,7 +70,9 @@ void file_free(FILE* fp);
 
 array_t* file_readlines(const char* filename);
 int file_writelines(const char* filename, array_t* lines);
+#ifdef HAVE_LIBZ
 array_t* file_gz_readlines(const char* filename);
+#endif
 string_t* file_readline(FILE* file);
 
 size_t file_num_lines(const char* filename);

@@ -24,7 +24,9 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#ifdef HAVE_LIBZ
 #include <zlib.h>
+#endif
 
 int file_test(const char* name, const char* flags)
 {
@@ -141,6 +143,7 @@ int file_writelines(const char* filename, array_t* lines)
 	return 1;
 }
 
+#ifdef HAVE_LIBZ
 array_t* file_gz_readlines(const char* filename)
 {
 	gzFile* file_pointer=NULL;
@@ -161,6 +164,7 @@ array_t* file_gz_readlines(const char* filename)
 	gzclose(file_pointer);
 	return output;
 }
+#endif
 
 string_t* file_readline(FILE* file_pointer)
 {

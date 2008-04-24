@@ -31,7 +31,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 
 #define _GNU_SOURCE // to get vasprintf
 //#define DEBUG
-#define USE_PCRE // nice perl-compatible regular expressions
+//#define USE_PCRE // nice perl-compatible regular expressions
 
 #include <errno.h>
 #include <string.h>
