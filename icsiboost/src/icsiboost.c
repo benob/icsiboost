@@ -21,6 +21,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 
 #define USE_THREADS
 //#define USE_FLOATS
+#define USE_CUTOFF
 
 #include "utils/common.h"
 #include "utils/debug.h"
@@ -117,6 +118,9 @@ typedef struct template { // a column definition
 	int column;
 	string_t* name;
 	int type;
+    int text_expert_type;
+    int text_expert_length;
+    int feature_count_cutoff;
 	hashtable_t* dictionary;       // dictionary for token based template
 	vector_t* tokens;              // the actual tokens (if the feature is text; contains tokeninfo)
 	vector_t* values;              // continuous values (if the feature is continuous)
@@ -1116,7 +1120,7 @@ vector_t* load_examples_multilabel(const char* filename, vector_t* templates, ve
 					if(in_test)test_example->discrete_features[template->column]=vector_new_int32_t(16);
 					hashtable_t* bag_of_words=hashtable_new();
 					string_t* field_string=string_new(token->data);
-					array_t* experts=text_expert(text_expert_type, text_expert_length, no_unk_ngrams, field_string);
+					array_t* experts=text_expert(template->text_expert_type, template->text_expert_length, no_unk_ngrams, field_string);
 					for(j=0; j<experts->length ; j++)
 					{
 						string_t* expert = array_get(experts, j);
@@ -1209,6 +1213,36 @@ vector_t* load_examples_multilabel(const char* filename, vector_t* templates, ve
 		else vector_push(examples, example);
 	}
 	fprintf(stderr, "\r%s: %d\n", filename, line_num);
+#ifdef USE_CUTOFF
+	if(!in_test) 
+	{
+		for(i=0;i<templates->length;i++)
+		{
+			template_t* template=(template_t*)vector_get(templates,i);
+			if(template->tokens->length>1)
+			{
+				for(j=1; j<template->tokens->length; j++) // remove unfrequent features
+				{
+					tokeninfo_t* tokeninfo=vector_get(template->tokens,j);
+					tokeninfo->id=j;
+					if(tokeninfo->count<template->feature_count_cutoff)
+					{
+						if(verbose)fprintf(stderr, "CUTOFF: \"%s\" %zd < %d\n", tokeninfo->key, tokeninfo->count, template->feature_count_cutoff);
+						hashtable_remove(template->dictionary, tokeninfo->key, strlen(tokeninfo->key));
+						if(tokeninfo->examples!=NULL)vector_free(tokeninfo->examples);
+						FREE(tokeninfo->key);
+						FREE(tokeninfo);
+						memcpy(template->tokens->data+j*sizeof(void*),template->tokens->data+(template->tokens->length-1)*sizeof(void*),sizeof(void*));
+						template->tokens->length--;
+						j--;
+					}
+				}
+			}
+			vector_optimize(template->tokens);
+			vector_optimize(template->values);
+		}
+	}
+#endif
 	// initalize weights and score
 	if(!in_test)
 	{
@@ -1850,7 +1884,7 @@ int main(int argc, char** argv)
 		}
 		else if(string_eq_cstr(arg,"--cutoff"))
 		{
-			//die("feature count cutoff not supported yet");
+			warn("feature count cutoff is experimental");
 			string_free(arg);
 			arg=(string_t*)array_shift(args);
 			if(arg==NULL)die("value needed for -f");
@@ -2089,10 +2123,53 @@ int main(int argc, char** argv)
 			template->column = line_num-1;
 			template->name = (string_t*)array_get(parts, 0);
 			string_t* type = (string_t*)array_get(parts, 1);
+            string_t* options = NULL;
+            if(parts->length > 2) {
+                options = (string_t*)array_get(parts, 2);
+            }
 			template->dictionary = hashtable_new();
 			template->tokens = vector_new(16);
 			template->values = vector_new_float(16);
 			template->classifiers = NULL;
+            template->text_expert_type = text_expert_type;
+            template->text_expert_length = text_expert_length;
+            template->feature_count_cutoff = feature_count_cutoff;
+            if(options != NULL) {
+                array_t* option_list = string_split(options, "[ \t]+", NULL);
+                int option_num;
+                for(option_num = 0; option_num < option_list->length; option_num ++) {
+                    string_t* option = (string_t*) array_get(option_list, option_num);
+                    array_t* option_parts = string_split(option, "=", NULL);
+                    string_t* option_name = (string_t*) array_get(option_parts, 0);
+                    string_t* option_value = (string_t*) array_get(option_parts, 1);
+                    if(verbose)fprintf(stderr, "OPTION(%s): %s %s\n", template->name->data, option_name->data, option_value->data);
+                    if(string_eq_cstr(option_name, "expert_type")) {
+                        if(string_eq_cstr(option_value,"sgram"))
+                            template->text_expert_type=TEXT_EXPERT_SGRAM;
+                        else if(string_eq_cstr(option_value,"fgram"))
+                            template->text_expert_type=TEXT_EXPERT_FGRAM;
+                        else if(string_eq_cstr(option_value,"ngram"))
+                            template->text_expert_type=TEXT_EXPERT_NGRAM;
+                        else {
+                            die("unknown expert type \"%s\", line %d in %s", option->data, line_num+1, names_filename->data);
+                        }
+                    } else if(string_eq_cstr(option_name, "expert_length")) {
+			            template->text_expert_length=string_to_int32(option_value);
+                        if(!template->text_expert_length>0)
+                        {
+                            die("invalid expert length \"%s\", line %d in %s", option->data, line_num+1, names_filename->data);
+                        }
+                    } else if(string_eq_cstr(option_name, "cutoff")) {
+			            template->feature_count_cutoff=string_to_int32(option_value);
+            			if(template->feature_count_cutoff<=0) die("invalid cutoff \"%s\", line %d in %s", option->data, line_num+1, names_filename->data);
+                    } else {
+                        die("unknown option \"%s\", line %d in %s", option->data, line_num+1, names_filename->data);
+                    }
+                    string_array_free(option_parts);
+                }
+                string_array_free(option_list);
+                string_free(options);
+            }
 			//template->dictionary_counts = vector_new(16);
 			template->ordered=NULL;
 			tokeninfo_t* unknown_token=(tokeninfo_t*)MALLOC(sizeof(tokeninfo_t));
@@ -2103,7 +2180,10 @@ int main(int argc, char** argv)
 			vector_push(template->tokens,unknown_token);
 			if(!strcmp(type->data, "continuous")) template->type = FEATURE_TYPE_CONTINUOUS;
 			else if(!strcmp(type->data, "text")) template->type = FEATURE_TYPE_TEXT;
-			else if(!strcmp(type->data, "scored text")) template->type = FEATURE_TYPE_IGNORE;
+			else if(!strcmp(type->data, "scored text")) {
+                template->type = FEATURE_TYPE_IGNORE;
+                warn("ignoring column \"%s\" of type \"%s\", line %d in %s", template->name->data, type->data, line_num+1, names_filename->data);
+            }
 			else if(!strcmp(type->data, "ignore")) template->type = FEATURE_TYPE_IGNORE;
 			else template->type = FEATURE_TYPE_SET;
 			if(template->type == FEATURE_TYPE_SET)
@@ -2289,7 +2369,7 @@ int main(int argc, char** argv)
 					if(string_cmp_cstr(token,"?")!=0)
 					{
 						int j;
-						array_t* experts=text_expert(text_expert_type, text_expert_length, no_unk_ngrams, token);
+						array_t* experts=text_expert(template->text_expert_type, template->text_expert_length, no_unk_ngrams, token);
 						for(j=0; j<experts->length; j++)
 						{
 							string_t* expert=array_get(experts, j);
