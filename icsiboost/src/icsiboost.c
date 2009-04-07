@@ -1590,6 +1590,7 @@ vector_t* load_model(vector_t* templates, vector_t* classes, char* filename, int
 						}
 						current->token = tokeninfo->id;
 					}
+                    if(verbose) fprintf(stderr, "  SGRAM(%s) \"%s\" (id=%d)\n", current->template->name->data, word->data, current->token);
 				}
 				else if(string_eq_cstr(vector_get(groups,2),"THRESHOLD"))
 				{
@@ -1652,6 +1653,7 @@ vector_t* load_model(vector_t* templates, vector_t* classes, char* filename, int
 		else if(current->type==CLASSIFIER_TYPE_THRESHOLD)
 		{
 			current->threshold=string_to_double(line);
+            if(verbose) fprintf(stderr, "  THRESHOLD(%s) %g\n", current->template->name->data, current->threshold);
 			if(isnan(current->threshold))die("invalid threshold \"%s\", line %d in %s", line->data, line_num, filename);
 			current=NULL;
 			if(num_iterations_to_load > 0 && classifiers->length >= num_iterations_to_load){ string_free(line); break; } // clip classifiers
@@ -2312,7 +2314,7 @@ int main(int argc, char** argv)
 		vector_t* classifiers=NULL;
 		if(model_name==NULL)
 		{
-			 model_name = string_copy(stem);
+			model_name = string_copy(stem);
 			string_append_cstr(model_name, ".shyp");
 		}
 		classifiers = load_model(templates,classes,model_name->data, test_time_iterations);
@@ -2374,8 +2376,13 @@ int main(int argc, char** argv)
 						{
 							string_t* expert=array_get(experts, j);
 							tokeninfo_t* tokeninfo=hashtable_get(template->dictionary, expert->data, expert->length);
-							if(tokeninfo!=NULL)
+                            int id = -1;
+							if(tokeninfo!=NULL) {
 								hashtable_set(subtokens, &tokeninfo->id, sizeof(tokeninfo->id), tokeninfo);
+                                id = tokeninfo->id;
+                            } else {
+                            }
+                            if(verbose) fprintf(stderr, "  EXPERT(%s): \"%s\" (id=%d)\n", template->name->data, expert->data, id);
 						}
 						string_array_free(experts);
 					}
@@ -2383,10 +2390,25 @@ int main(int argc, char** argv)
 					for(j=0; j<template->classifiers->length; j++)
 					{
 						weakclassifier_t* classifier=vector_get(template->classifiers, j);
-						if(hashtable_get(subtokens, &classifier->token, sizeof(classifier->token))==NULL)
+						if(hashtable_get(subtokens, &classifier->token, sizeof(classifier->token))==NULL) {
+                            if(verbose) {
+                                fprintf(stderr, "    WEAKC %s=%d: C1 (absent)", classifier->template->name->data, classifier->token);
+							    for(l=0; l<classes->length; l++) {
+                                    fprintf(stderr, " %g", classifier->alpha*classifier->c1[l]);
+                                }
+                                fprintf(stderr, "\n");
+                            }
 							for(l=0; l<classes->length; l++) score[l]+=classifier->alpha*classifier->c1[l];
-						else
+						} else {
+                            if(verbose) {
+                                fprintf(stderr, "    WEAKC %s=%d: C2 (present)", classifier->template->name->data, classifier->token);
+							    for(l=0; l<classes->length; l++) {
+                                    fprintf(stderr, " %g", classifier->alpha*classifier->c2[l]);
+                                }
+                                fprintf(stderr, "\n");
+                            }
 							for(l=0; l<classes->length; l++) score[l]+=classifier->alpha*classifier->c2[l];
+                        }
 					}
 					hashtable_free(subtokens);
 				}
@@ -2398,12 +2420,34 @@ int main(int argc, char** argv)
 					for(j=0; j<template->classifiers->length; j++)
 					{
 						weakclassifier_t* classifier=vector_get(template->classifiers, j);
-						if(isnan(value))
+						if(isnan(value)) {
+                            if(verbose) {
+                                fprintf(stderr, "    WEAKC %s=nan: C0 (unk)", classifier->template->name->data);
+							    for(l=0; l<classes->length; l++) {
+                                    fprintf(stderr, " %g", classifier->alpha*classifier->c1[l]);
+                                }
+                                fprintf(stderr, "\n");
+                            }
 							for(l=0; l<classes->length; l++) score[l]+=classifier->alpha*classifier->c0[l];
-						else if(value < classifier->threshold)
+						} else if(value < classifier->threshold) {
+                            if(verbose) {
+                                fprintf(stderr, "    WEAKC %s<%f: C1 (<)", classifier->template->name->data, classifier->threshold);
+							    for(l=0; l<classes->length; l++) {
+                                    fprintf(stderr, " %g", classifier->alpha*classifier->c1[l]);
+                                }
+                                fprintf(stderr, "\n");
+                            }
 							for(l=0; l<classes->length; l++) score[l]+=classifier->alpha*classifier->c1[l];
-						else
+						} else {
+                            if(verbose) {
+                                fprintf(stderr, "    WEAKC %s>=%f: C2 (>=)", classifier->template->name->data, classifier->threshold);
+							    for(l=0; l<classes->length; l++) {
+                                    fprintf(stderr, " %g", classifier->alpha*classifier->c2[l]);
+                                }
+                                fprintf(stderr, "\n");
+                            }
 							for(l=0; l<classes->length; l++) score[l]+=classifier->alpha*classifier->c2[l];
+                        }
 					}
 				}
 				// FEATURE_TYPE_IGNORE
