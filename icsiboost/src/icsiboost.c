@@ -120,6 +120,8 @@ typedef struct template { // a column definition
 	int type;
     int text_expert_type;
     int text_expert_length;
+    int no_unk_ngrams;
+    string_t* drop_regex;
     int feature_count_cutoff;
 	hashtable_t* dictionary;       // dictionary for token based template
 	vector_t* tokens;              // the actual tokens (if the feature is text; contains tokeninfo)
@@ -979,75 +981,88 @@ double compute_classification_error(vector_t* classifiers, vector_t* examples, i
 #define TEXT_EXPERT_SGRAM 2
 #define TEXT_EXPERT_FGRAM 3
 // warning: text experts SGRAM and FGRAM do not output anything if the window is larger than the actual number of words
-array_t* text_expert(int type, int length, int no_unk_ngrams, string_t* text)
+array_t* text_expert(template_t* template, string_t* text)
 {
 	array_t* words=string_split(text, " ", NULL);
-	if(length==1 || words->length==1)
+	array_t* output = words;
+	if(template->text_expert_length>1 && words->length>1)
 	{
-		return words;
-	}
-	array_t* output=array_new();
-	int i,j;
-	if(type==TEXT_EXPERT_NGRAM)
-	{
-		for(i=0; i<words->length; i++)
-		{
-			array_t* gram=array_new();
-			for(j=0; j<length && i+j<words->length ;j++)
-			{
-				array_push(gram, array_get(words, i+j));
-				array_push(output, string_join_cstr("#", gram));
-			}
-			array_free(gram);
-		}
-	}
-	else if(type==TEXT_EXPERT_FGRAM)
-	{
-		for(i=0; i+length-1<words->length; i++)
-		{
-			array_t* gram=array_new();
-			for(j=0; j<length && i+j<words->length ;j++)
-			{
-				array_push(gram, array_get(words, i+j));
-			}
-			array_push(output, string_join_cstr("#", gram));
-			array_free(gram);
-		}
-	}
-	else if(type==TEXT_EXPERT_SGRAM) // different results than boostexter
-	{
-		for(i=0; i<words->length; i++)
-		{
-			array_t* gram=array_new();
-			array_push(gram, array_get(words, i));
-			array_push(output, string_copy(array_get(words, i)));
-			for(j=1; j<length && i+j<words->length ;j++)
-			{
-				array_push(gram, array_get(words, i+j));
-				array_push(output, string_join_cstr("#", gram));
-				array_pop(gram);
-			}
-			array_free(gram);
-		}
-	}
-	else
-	{
-		die("unimplented text expert");
-	}
-	string_array_free(words);
-	if(no_unk_ngrams)
-	{
-		array_t* no_unk=string_array_grep(output, "(^|#)unk(#|$)", "!");
-		string_array_free(output);
-		if(no_unk == NULL)
-			return array_new();
-		return no_unk;
-	}
-	return output;
+        output = array_new();
+        int i,j;
+        if(template->text_expert_type==TEXT_EXPERT_NGRAM)
+        {
+            for(i=0; i<words->length; i++)
+            {
+                array_t* gram=array_new();
+                for(j=0; j<template->text_expert_length && i+j<words->length ;j++)
+                {
+                    array_push(gram, array_get(words, i+j));
+                    array_push(output, string_join_cstr("#", gram));
+                }
+                array_free(gram);
+            }
+        }
+        else if(template->text_expert_type==TEXT_EXPERT_FGRAM)
+        {
+            for(i=0; i+template->text_expert_length-1<words->length; i++)
+            {
+                array_t* gram=array_new();
+                for(j=0; j<template->text_expert_length && i+j<words->length ;j++)
+                {
+                    array_push(gram, array_get(words, i+j));
+                }
+                array_push(output, string_join_cstr("#", gram));
+                array_free(gram);
+            }
+        }
+        else if(template->text_expert_type==TEXT_EXPERT_SGRAM) // different results than boostexter
+        {
+            for(i=0; i<words->length; i++)
+            {
+                array_t* gram=array_new();
+                array_push(gram, array_get(words, i));
+                array_push(output, string_copy(array_get(words, i)));
+                for(j=1; j<template->text_expert_length && i+j<words->length ;j++)
+                {
+                    array_push(gram, array_get(words, i+j));
+                    array_push(output, string_join_cstr("#", gram));
+                    array_pop(gram);
+                }
+                array_free(gram);
+            }
+        }
+        else
+        {
+            die("unimplented text expert");
+        }
+        string_array_free(words);
+    }
+    if(template->no_unk_ngrams)
+    {
+        array_t* no_unk=string_array_grep(output, "(^|#)unk(#|$)", "!");
+        string_array_free(output);
+        if(no_unk == NULL)
+            return array_new();
+        return no_unk;
+    }
+    if(template->drop_regex)
+    {
+        //if(verbose) fprintf(stderr, "DROP(%s) /%s/\n", template->name->data, template->drop_regex->data);
+        array_t* filtered=string_array_grep(output, template->drop_regex->data, "!");
+        if(filtered == NULL) filtered = array_new();
+        if(verbose && filtered->length != output->length) {
+            string_t* before = string_join_cstr(" ", output);
+            string_t* after = string_join_cstr(" ", filtered);
+            fprintf(stderr, "DROP [%s] => [%s]\n", before->data, after->data);
+        }
+        string_array_free(output);
+        return filtered;
+    }
+    return output;
 }
 
 vector_t* load_examples_multilabel(const char* filename, vector_t* templates, vector_t* classes, double* class_priors, 
-	int feature_count_cutoff, int in_test, int text_expert_type, int text_expert_length, int no_unk_ngrams)
+	int feature_count_cutoff, int in_test)
 {
 	FILE* fp=stdin;
 	if(strcmp(filename,"-")!=0)
@@ -1120,7 +1135,7 @@ vector_t* load_examples_multilabel(const char* filename, vector_t* templates, ve
 					if(in_test)test_example->discrete_features[template->column]=vector_new_int32_t(16);
 					hashtable_t* bag_of_words=hashtable_new();
 					string_t* field_string=string_new(token->data);
-					array_t* experts=text_expert(template->text_expert_type, template->text_expert_length, no_unk_ngrams, field_string);
+					array_t* experts=text_expert(template, field_string);
 					for(j=0; j<experts->length ; j++)
 					{
 						string_t* expert = array_get(experts, j);
@@ -1304,7 +1319,7 @@ vector_t* load_examples_multilabel(const char* filename, vector_t* templates, ve
   if it is a test or dev file (in_test=1) then do not update dictionaries
   note: real test files without a class in the end will fail (this is not classification mode)
 */
-/*vector_t* load_examples(const char* filename, vector_t* templates, vector_t* classes, int feature_count_cutoff, int in_test, int text_expert_type, int text_expert_length, int no_unk_ngrams)
+/*vector_t* load_examples(const char* filename, vector_t* templates, vector_t* classes, int feature_count_cutoff, int in_test)
 {
 	int i,j;
 	mapped_t* input = mapped_load_readonly(filename);
@@ -1379,7 +1394,7 @@ vector_t* load_examples_multilabel(const char* filename, vector_t* templates, ve
 					if(in_test)test_example->discrete_features[template->column]=vector_new_int32_t(16);
 					hashtable_t* bag_of_words=hashtable_new();
 					string_t* field_string=string_new(field);
-					array_t* experts=text_expert(text_expert_type, text_expert_length, no_unk_ngrams, field_string);
+					array_t* experts=text_expert(template, field_string);
 					for(j=0; j<experts->length ; j++)
 					{
 						string_t* expert = array_get(experts, j);
@@ -1772,11 +1787,12 @@ void usage(char* program_name)
 	fprintf(stderr,"  -V                      verbose mode\n");
 	fprintf(stderr,"  -C                      classification mode -- reads examples from <stdin>\n");
 	fprintf(stderr,"  -o                      long output in classification mode\n");
-	fprintf(stderr,"  -N <text_expert>        choose a text expert between fgram, ngram and sgram\n");
-	fprintf(stderr,"  -W <ngram_length>       specify window length of text expert\n");
+	fprintf(stderr,"  -N <text_expert>        choose a text expert between fgram, ngram and sgram (also \"<name>:text:expert_type=<x>\" in the .names)\n");
+	fprintf(stderr,"  -W <ngram_length>       specify window length of text expert (also \"<name>:text:expert_length=<n>\" in .names)\n");
 	fprintf(stderr,"  --dryrun                only parse the names file and the data file to check for errors\n");
 	//fprintf(stderr,"  --dryrun-train          do everything but do not save model\n");
-	fprintf(stderr,"  --cutoff <freq>         ignore nominal features occuring unfrequently (shorten training time)\n");
+	fprintf(stderr,"  --cutoff <freq>         ignore nominal features occuring unfrequently (also \"<name>:text:cutoff=<freq>\" in .names)\n");
+    fprintf(stderr,"  --drop <regex>          drop text features that match a regular expression (also \"<name>:text:drop=<regex>\" in .names)\n");
 	fprintf(stderr,"  --no-unk-ngrams         ignore ngrams that contain the \"unk\" token\n");
 	fprintf(stderr,"  --jobs <threads>        number of threaded weak learners\n");
 	fprintf(stderr,"  --do-not-pack-model     do not pack model (this is the default behavior)\n");
@@ -1867,6 +1883,7 @@ int main(int argc, char** argv)
 	string_t* ignore_regex=NULL;
 	array_t* only_columns=NULL;
 	string_t* only_regex=NULL;
+    string_t* drop_regex=NULL;
 #ifdef USE_THREADS
 	int number_of_workers=1;
 #endif
@@ -1974,6 +1991,12 @@ int main(int argc, char** argv)
 			string_free(arg);
 			arg=(string_t*)array_shift(args);
 			only_regex=string_copy(arg);
+		}
+		else if(string_eq_cstr(arg,"--drop"))
+		{
+			string_free(arg);
+			arg=(string_t*)array_shift(args);
+			drop_regex=string_copy(arg);
 		}
 		else if(string_eq_cstr(arg,"--version"))
 		{
@@ -2135,6 +2158,8 @@ int main(int argc, char** argv)
 			template->classifiers = NULL;
             template->text_expert_type = text_expert_type;
             template->text_expert_length = text_expert_length;
+            template->drop_regex = drop_regex;
+            template->no_unk_ngrams = no_unk_ngrams;
             template->feature_count_cutoff = feature_count_cutoff;
             if(options != NULL) {
                 array_t* option_list = string_split(options, "[ \t]+", NULL);
@@ -2154,6 +2179,15 @@ int main(int argc, char** argv)
                             template->text_expert_type=TEXT_EXPERT_NGRAM;
                         else {
                             die("unknown expert type \"%s\", line %d in %s", option->data, line_num+1, names_filename->data);
+                        }
+                    } else if(string_eq_cstr(option_name, "drop")) {
+                        template->drop_regex = string_copy(option_value);
+                        if(verbose) fprintf(stderr, "%s\n", template->drop_regex->data);
+                    } else if(string_eq_cstr(option_name, "no_unk")) {
+			            template->no_unk_ngrams=string_to_int32(option_value);
+                        if(template->no_unk_ngrams != 0 && template->no_unk_ngrams != 1)
+                        {
+                            die("invalid value for no_unk \"%s\", line %d in %s", option->data, line_num+1, names_filename->data);
                         }
                     } else if(string_eq_cstr(option_name, "expert_length")) {
 			            template->text_expert_length=string_to_int32(option_value);
@@ -2371,7 +2405,7 @@ int main(int argc, char** argv)
 					if(string_cmp_cstr(token,"?")!=0)
 					{
 						int j;
-						array_t* experts=text_expert(template->text_expert_type, template->text_expert_length, no_unk_ngrams, token);
+						array_t* experts=text_expert(template, token);
 						for(j=0; j<experts->length; j++)
 						{
 							string_t* expert=array_get(experts, j);
@@ -2609,7 +2643,7 @@ int main(int argc, char** argv)
 		data_filename = string_copy(stem);
 		string_append_cstr(data_filename, ".data");
 	}
-	vector_t* examples = load_examples_multilabel(data_filename->data, templates, classes, class_priors, feature_count_cutoff, 0, text_expert_type, text_expert_length, no_unk_ngrams);
+	vector_t* examples = load_examples_multilabel(data_filename->data, templates, classes, class_priors, feature_count_cutoff, 0);
 	if(examples == NULL || examples->length == 0) {
 		die("no training examples found in \"%s\"", data_filename->data);
 	}
@@ -2635,7 +2669,7 @@ int main(int argc, char** argv)
 		dev_filename = string_copy(stem);
 		string_append_cstr(dev_filename, ".dev");
 	}
-	dev_examples = load_examples_multilabel(dev_filename->data, templates, classes, NULL, 0, 1, text_expert_type, text_expert_length, no_unk_ngrams);
+	dev_examples = load_examples_multilabel(dev_filename->data, templates, classes, NULL, 0, 1);
 	if(dev_examples != NULL && dev_examples->length == 0) {
 		warn("no dev examples found in \"%s\"", dev_filename->data);
 		vector_free(dev_examples);
@@ -2647,7 +2681,7 @@ int main(int argc, char** argv)
 		test_filename = string_copy(stem);
 		string_append_cstr(test_filename, ".test");
 	}
-	test_examples = load_examples_multilabel(test_filename->data, templates, classes, NULL, 0, 1, text_expert_type, text_expert_length, no_unk_ngrams);
+	test_examples = load_examples_multilabel(test_filename->data, templates, classes, NULL, 0, 1);
 	if(test_examples != NULL && test_examples->length == 0) {
 		warn("no test examples found in \"%s\"", test_filename->data);
 		vector_free(test_examples);
