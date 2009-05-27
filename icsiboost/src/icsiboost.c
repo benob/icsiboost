@@ -2590,17 +2590,17 @@ int main(int argc, char** argv)
 							string_t* class=vector_get(classes,l);
 							fprintf(stdout,"%s%s % 5f : %s \n", example_classes[l]==1?"*":" ",
 									(score[l]>0?">":(example_classes[l]==1?"*":" ")),score[l]+decision_threshold,class->data);
-							if((score[l]<=0 && example_classes[l]==1))
+							if((!(score[l]>0) && example_classes[l]!=0))
 							{
 								erroneous_example=1;
 								by_class_errors[l]++;
 							}
-							if((score[l]>0 && example_classes[l]==0))
+                            else if((score[l]>0 && example_classes[l]==0))
 							{
 								erroneous_example=1;
-								by_class_errors[l]++;
+								//by_class_errors[l]++;
 							}
-							if(example_classes[l]==1)
+							if(example_classes[l]!=0)
 								by_class_totals[l]++;
 						}
 						if(erroneous_example == 1) errors++;
@@ -2628,7 +2628,7 @@ int main(int argc, char** argv)
 			{
 				string_t* class = vector_get(classes, l);
 				fprintf(stderr, "  %s: %f (%d/%d)\n", class->data,
-					(by_class_totals==0 ? NAN : (double)by_class_errors[l]/(double)by_class_totals[l]),
+					(by_class_totals[l]==0 ? NAN : (double)by_class_errors[l]/(double)by_class_totals[l]),
 					by_class_errors[l], by_class_totals[l]);
 			}
 		}
