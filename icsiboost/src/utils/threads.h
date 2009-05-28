@@ -27,10 +27,11 @@ typedef struct semaphore {
 	int count;
 	pthread_mutex_t count_mutex;
 	pthread_cond_t above_zero;
+    int block_on_zero;
 } semaphore_t;
 
 semaphore_t* semaphore_new(int value);
-void semaphore_eat(semaphore_t* semaphore);
+int semaphore_eat(semaphore_t* semaphore);
 void semaphore_feed(semaphore_t* semaphore);
 void semaphore_free(semaphore_t* semaphore);
 
