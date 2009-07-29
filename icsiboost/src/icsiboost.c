@@ -2276,30 +2276,36 @@ int main(int argc, char** argv)
 	}
 	if(ignore_columns!=NULL)
 	{
+        int ignored = 0;
 		for(i=0; i<ignore_columns->length; i++)
 		{
 			string_t* column=(string_t*)array_get(ignore_columns, i);
 			template_t* template=hashtable_exists(templates_by_name, column->data, column->length);
 			if(template!=NULL)
 			{
+                ignored ++;
 				template->type=FEATURE_TYPE_IGNORE;
 				if(verbose>0) { warn("ignoring column \"%s\"", column->data); }
 			}
 		}
 		string_array_free(ignore_columns);
+        if(ignored == 0) warn("no column ignored");
 	}
 	if(ignore_regex!=NULL)
 	{
+        int ignored = 0;
 		for(i=0; i<templates->length; i++)
 		{
 			template_t* template=vector_get(templates, i);
 			if(string_match(template->name, ignore_regex->data, "n"))
 			{
+                ignored ++;
 				template->type=FEATURE_TYPE_IGNORE;
 				if(verbose>0) { warn("ignoring column \"%s\"", template->name->data); }
 			}
 		}
 		string_free(ignore_regex);
+        if(ignored == 0) warn("no column ignored");
 	}
 	if(only_columns!=NULL)
 	{
@@ -2977,6 +2983,7 @@ int main(int argc, char** argv)
 		if(use_max_fmeasure) fprintf(stdout,"rnd %d: wh-err= %f th-err= %f dev= %f (R=%.3f, P=%.3f) test= %f (R=%.3f, P=%.3f) train= %f (R=%.3f, P=%.3f)\n",iteration+1,classifier->objective,theorical_error,dev_error,dev_recall, dev_precision, test_error, test_recall, test_precision, error, train_recall, train_precision);
 		else fprintf(stdout,"rnd %d: wh-err= %f th-err= %f dev= %f test= %f train= %f\n",iteration+1,classifier->objective,theorical_error,dev_error,test_error,error);
 		if(save_model_at_each_iteration) save_model(classifiers, classes, model_name->data, 0, 0);
+        fflush(stdout);
 	}
 
 	save_model(classifiers, classes, model_name->data,pack_model, optimal_iterations);
