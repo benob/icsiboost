@@ -17,8 +17,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 
 /* this program implements SAMME as described in "Multi-class AdaBoost" by Ji
  * Zhu et al. (2005). Unlike icsiboost, it uses a different input format (no
- * .names), only supports discrete features, does not generate do any
- * preprocessing (ngrams...)
+ * .names), only supports discrete features, does no preprocessing (ngrams...)
  */
 
 #define _GNU_SOURCE
@@ -159,7 +158,7 @@ int read_examples(const char* input, vector_t* features, vector_t* examples, vec
         int j;
         for(j = 0; j < labels->length; j++) example->label_score[j] = 0.0;
     }
-    vector_sort(features, num_examples_comparator); // always start with larger jobs
+    //vector_sort(features, num_examples_comparator); // always start with larger jobs
     hashtable_free(text_to_label);
     hashtable_free(text_to_feature);
     return 0;
@@ -197,6 +196,7 @@ void* best_classifier_thread(void* input) {
     double feature_not_label[workspace->num_labels];
     double feature_label[workspace->num_labels];
     int j, k;
+    int old_percent = -1;
     while(1) { // features available
         int current = semaphore_eat(workspace->feature_semaphore);
         if(current < 0) break;
@@ -221,6 +221,12 @@ void* best_classifier_thread(void* input) {
                 workspace->argmin_label = j;
                 workspace->min = error[j];
             }
+        }
+        int percent = (workspace->features->length - current) * 100 / workspace->features->length;
+        if(percent != old_percent) {
+            fprintf(stdout, "\r%d%%", percent);
+            fflush(stdout);
+            old_percent = percent;
         }
     }
 	pthread_exit(NULL);
@@ -349,7 +355,7 @@ double compute_error(vector_t* examples, classifier_t* classifier, vector_t* lab
         int argmax = 0;
         double max = example->label_score[0];
         for(j = 1; j < labels->length; j++) {
-            if(example->label_score[j] > max) {
+            if(example->label_score[j] >= max) {
                 max = example->label_score[j];
                 argmax = j;
             }
@@ -485,7 +491,7 @@ int main(int argc, char** argv) {
         update_weights(examples, classifier);
         double error = compute_error(examples, classifier, labels);
         label_t* label = (label_t*) vector_get(labels, classifier->label);
-        fprintf(stdout, "%d err=%f %s:%s\n", i + 1, error, classifier->feature->text, label->text);
+        fprintf(stdout, "\r%d err=%f %s:%s\n", i + 1, error, classifier->feature->text, label->text);
         fprintf(model, "%f %s %s\n", classifier->alpha, label->text, classifier->feature->text);
         fflush(model);
     }
