@@ -1,4 +1,4 @@
-/* Copyright (C) (2007) (Benoit Favre) <favre@icsi.berkeley.edu>
+/* Copyright (C) (2007-2009) (Benoit Favre) <favre@icsi.berkeley.edu>
 
 This program is free software; you can redistribute it and/or 
 modify it under the terms of the GNU Lesser General Public License 
@@ -48,7 +48,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #include <time.h>
 #include <unistd.h>
 
-// this is not recommanded
+// this is not recommended
 #ifdef USE_FLOATS
 #define double float
 #endif
@@ -138,7 +138,7 @@ typedef struct example { // an instance
 	//vector_t* features;            // vector of (int or float according to templates)
 } example_t;
 
-typedef struct test_example { // a test instance (not very memory efficicent) WARNING: has to be "compatible" with example_t up to score[]
+typedef struct test_example { // a test instance (not very memory efficient) WARNING: has to be "compatible" with example_t up to score[]
 	int32_t* classes;
 	int num_classes;
 	double* score;
@@ -212,7 +212,7 @@ weakclassifier_t* train_text_stump(double min_objective, template_t* template, v
 	size_t num_tokens=template->tokens->length;
 	int32_t t;
 
-	double* weight[2][num_classes]; // weight[b][label][token] (=> D() in the paper), only for token presence (absence is infered from sum_of_weights)
+	double* weight[2][num_classes]; // weight[b][label][token] (=> D() in the paper), only for token presence (absence is inferred from sum_of_weights)
 	for(l=0;l<num_classes;l++)
 	{
 		weight[0][l]=MALLOC(sizeof(double)*num_tokens);
@@ -303,7 +303,7 @@ weakclassifier_t* train_abstaining_text_stump(double min_objective, template_t* 
 	size_t num_tokens=template->tokens->length;
 	int32_t t;
 
-	double* weight[2][num_classes]; // weight[b][label][token] (=> D() in the paper), only for token presence (absence is infered from sum_of_weights)
+	double* weight[2][num_classes]; // weight[b][label][token] (=> D() in the paper), only for token presence (absence is inferred from sum_of_weights)
 	for(l=0;l<num_classes;l++)
 	{
 		weight[0][l]=MALLOC(sizeof(double)*num_tokens);
@@ -648,7 +648,7 @@ typedef struct workertoolbox {
 	SHARED_NOINIT(weakclassifier_t*,best_classifier); // the result of a job
 	//sem_t* ready_to_process; // if available, a thread can start working
 	semaphore_t* ready_to_process;
-	//sem_t* result_available; // if available, a result is avaiable in best_classifier
+	//sem_t* result_available; // if available, a result is available in best_classifier
 	semaphore_t* result_available;
 } workertoolbox_t;
 
@@ -955,7 +955,7 @@ double compute_classification_error(vector_t* classifiers, vector_t* examples, i
 			sum_of_weights[0][l]=0.0;
 			sum_of_weights[1][l]=0.0;
 		}
-		for(i=0;i<examples->length;i++) // normalize the weights and do some stats for debuging
+		for(i=0;i<examples->length;i++) // normalize the weights and do some stats for debugging
 		{
 			example_t* example=(example_t*)vector_get(examples,i);
 			//fprintf(stdout,"%d",i);
@@ -1033,7 +1033,7 @@ array_t* text_expert(template_t* template, string_t* text)
         }
         else
         {
-            die("unimplented text expert");
+            die("unimplemented text expert");
         }
         string_array_free(words);
     }
@@ -1130,7 +1130,7 @@ vector_t* load_examples_multilabel(const char* filename, vector_t* templates, ve
 			}
 			else if(template->type == FEATURE_TYPE_TEXT || template->type==FEATURE_TYPE_SET)
 			{
-				if(token->length==0 || strcmp(token->data,"?")) // if not unknwon value
+				if(token->length==0 || strcmp(token->data,"?")) // if not unknown value
 				{
 					if(in_test)test_example->discrete_features[template->column]=vector_new_int32_t(16);
 					hashtable_t* bag_of_words=hashtable_new();
@@ -1236,7 +1236,7 @@ vector_t* load_examples_multilabel(const char* filename, vector_t* templates, ve
 			template_t* template=(template_t*)vector_get(templates,i);
 			if(template->tokens->length>1)
 			{
-				for(j=1; j<template->tokens->length; j++) // remove unfrequent features
+				for(j=1; j<template->tokens->length; j++) // remove infrequent features
 				{
 					tokeninfo_t* tokeninfo=vector_get(template->tokens,j);
 					tokeninfo->id=j;
@@ -1258,7 +1258,7 @@ vector_t* load_examples_multilabel(const char* filename, vector_t* templates, ve
 		}
 	}
 #endif
-	// initalize weights and score
+	// initialize weights and score
 	if(!in_test)
 	{
 		if(class_priors != NULL)
@@ -1791,7 +1791,7 @@ void usage(char* program_name)
 	fprintf(stderr,"  -W <ngram_length>       specify window length of text expert (also \"<name>:text:expert_length=<n>\" in .names)\n");
 	fprintf(stderr,"  --dryrun                only parse the names file and the data file to check for errors\n");
 	//fprintf(stderr,"  --dryrun-train          do everything but do not save model\n");
-	fprintf(stderr,"  --cutoff <freq>         ignore nominal features occuring unfrequently (also \"<name>:text:cutoff=<freq>\" in .names)\n");
+	fprintf(stderr,"  --cutoff <freq>         ignore nominal features occurring infrequently (also \"<name>:text:cutoff=<freq>\" in .names)\n");
     fprintf(stderr,"  --drop <regex>          drop text features that match a regular expression (also \"<name>:text:drop=<regex>\" in .names)\n");
 	fprintf(stderr,"  --no-unk-ngrams         ignore ngrams that contain the \"unk\" token\n");
 	fprintf(stderr,"  --jobs <threads>        number of threaded weak learners\n");
@@ -1824,7 +1824,7 @@ void print_version(char* program_name)
 {
 	fprintf(stdout,"%s v%s, Boosting decision stumps.\n", PACKAGE, VERSION);
 	fprintf(stdout,"Written by Benoit Favre.\n\n");
-	fprintf(stdout,"Copyright (C) 2007 International Computer Science Institute.\n");
+	fprintf(stdout,"Copyright (C) 2007-2009 International Computer Science Institute.\n");
 	fprintf(stdout,"This is free software; see the source for copying conditions.  There is NO\n");
 	fprintf(stdout,"warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n");
 	fprintf(stdout,"Build: %s at %s"
@@ -2655,7 +2655,7 @@ int main(int argc, char** argv)
 	}
 	string_free(data_filename);
 
-	// generate a simple random sequence of example ids for sampleing
+	// generate a simple random sequence of example ids for sampling
 	/*random_sequence=(int*)MALLOC(sizeof(int)*examples->length);
 	srand(time(NULL));
 	for(i=0;i<examples->length;i++)
@@ -2669,7 +2669,7 @@ int main(int argc, char** argv)
 	vector_t* dev_examples=NULL;
 	vector_t* test_examples=NULL;
 
-// deactivated dev/test that don't work with the new indexed features (need separate handleing)
+// deactivated dev/test that don't work with the new indexed features (need separate handling)
 
 	if(dev_filename == NULL) {
 		dev_filename = string_copy(stem);
@@ -2748,7 +2748,7 @@ int main(int argc, char** argv)
 	//toolbox->result_available=MALLOC(sizeof(sem_t));
 	//sem_init(toolbox->result_available,0,0);
 	//sem_unlink("result_available");
-	//toolbox->result_available=sem_open("result_avaiable",O_CREAT,0700,0);
+	//toolbox->result_available=sem_open("result_available",O_CREAT,0700,0);
 	//if(toolbox->result_available==(sem_t*)SEM_FAILED)die("result_available");
 	toolbox->result_available=semaphore_new(0);
 	semaphore_feed(toolbox->result_available);
@@ -2764,7 +2764,7 @@ int main(int argc, char** argv)
 	}
 #endif
 	int iteration=0;
-	double theorical_error=1.0;
+	double theoretical_error=1.0;
 	double minimum_test_error=1.0;
 	double optimal_iteration_threshold = NAN;
 	if(use_max_fmeasure) minimum_test_error = 0.0;
@@ -2834,9 +2834,9 @@ int main(int argc, char** argv)
 					fprintf(stdout,"C1: ");for(i=0;i<classes->length;i++)fprintf(stdout," % 4.3f ",classifier->c2[i]); fprintf(stdout,"\n");
 				}
 			}
-			//theorical_error*=classifier->objective;
-			theorical_error=NAN;
-			fprintf(stdout,"rnd %d: wh-err= %f th-err= %f dev= %f test= %f train= %f\n",iteration+1,classifier->objective,theorical_error,dev_error,test_error,error);
+			//theoretical_error*=classifier->objective;
+			theoretical_error=NAN;
+			fprintf(stdout,"rnd %d: wh-err= %f th-err= %f dev= %f test= %f train= %f\n",iteration+1,classifier->objective,theoretical_error,dev_error,test_error,error);
 		}
 	}
 	for(;iteration<maximum_iterations;iteration++)
@@ -2979,9 +2979,9 @@ int main(int argc, char** argv)
 				fprintf(stdout,"C1: ");for(i=0;i<classes->length;i++)fprintf(stdout," % 4.3f ",classifier->c2[i]); fprintf(stdout,"\n");
 			}
 		}
-		theorical_error*=classifier->objective;
-		if(use_max_fmeasure) fprintf(stdout,"rnd %d: wh-err= %f th-err= %f dev= %f (R=%.3f, P=%.3f) test= %f (R=%.3f, P=%.3f) train= %f (R=%.3f, P=%.3f)\n",iteration+1,classifier->objective,theorical_error,dev_error,dev_recall, dev_precision, test_error, test_recall, test_precision, error, train_recall, train_precision);
-		else fprintf(stdout,"rnd %d: wh-err= %f th-err= %f dev= %f test= %f train= %f\n",iteration+1,classifier->objective,theorical_error,dev_error,test_error,error);
+		theoretical_error*=classifier->objective;
+		if(use_max_fmeasure) fprintf(stdout,"rnd %d: wh-err= %f th-err= %f dev= %f (R=%.3f, P=%.3f) test= %f (R=%.3f, P=%.3f) train= %f (R=%.3f, P=%.3f)\n",iteration+1,classifier->objective,theoretical_error,dev_error,dev_recall, dev_precision, test_error, test_recall, test_precision, error, train_recall, train_precision);
+		else fprintf(stdout,"rnd %d: wh-err= %f th-err= %f dev= %f test= %f train= %f\n",iteration+1,classifier->objective,theoretical_error,dev_error,test_error,error);
 		if(save_model_at_each_iteration) save_model(classifiers, classes, model_name->data, 0, 0);
         fflush(stdout);
 	}
