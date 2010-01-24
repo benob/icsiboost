@@ -722,6 +722,25 @@ void* threaded_worker(void* data)
 }
 #endif
 
+/* compute max error rate */
+double compute_max_error(vector_t* examples, int num_classes)
+{
+	double error=0;
+	int i,l;
+	for(i=0; i<examples->length; i++)
+	{
+		test_example_t* example = vector_get(examples, i);
+
+		int max_class = 0;
+		for(l=0;l<num_classes;l++) // selected class = class with highest score
+		{
+			if (example->score[l]>example->score[max_class]) max_class = l;
+		}
+		if (!b(example, max_class)) error++;
+	}
+	return error/(examples->length);
+}
+
 /* compute error rate AND update weights
    in testing conditions (dev or test set) sum_of_weights is NULL, so just compute error rate
    => need to be parallelized
@@ -1817,6 +1836,7 @@ void usage(char* program_name)
 	fprintf(stderr,"  --no-unknown-stump      use abstain-on-unknown continuous stump (experimental)\n");
 	fprintf(stderr,"  --sequence              generate column __SEQUENCE_PREVIOUS from previous prediction at test time (experimental)\n");
 	fprintf(stderr,"  --anti-prior            set initial weights to focus on classes with a lower prior (experimental)\n");
+	fprintf(stderr,"  --display-maxclass      display the classification rate obtained by selecting only one class by exemple, the one that obtains the maximum score (boostexter-compatible)\n");
 	exit(1);
 }
 
@@ -1856,6 +1876,7 @@ int main(int argc, char** argv)
 #ifdef USE_GC
 	GC_INIT();
 #endif
+	int display_maxclass_error=0;
 	int maximum_iterations=10;
 	int test_time_iterations=-1;
 	int feature_count_cutoff=0;
@@ -2010,6 +2031,10 @@ int main(int argc, char** argv)
 		else if(string_eq_cstr(arg,"--anti-prior"))
 		{
 			enforce_anti_priors=1;
+		}
+		else if(string_eq_cstr(arg,"--display-maxclass"))
+		{
+			display_maxclass_error=1;
 		}
 		else if(string_eq_cstr(arg,"-C"))
 		{
@@ -2782,10 +2807,12 @@ int main(int argc, char** argv)
 			double error=compute_classification_error(classifiers, examples, iteration, sum_of_weights, classes->length); // compute error rate and update weights
 			if(use_max_fmeasure) error = compute_max_fmeasure(examples, fmeasure_class_id, NULL, NULL, NULL);
 			double dev_error=NAN;
+			double dev_error_monoclass=NAN;
 			double threshold = NAN;
 			if(dev_examples!=NULL)
 			{
 				dev_error = compute_test_error(classifiers, dev_examples, iteration, classes->length); // compute error rate on test
+				if (display_maxclass_error) dev_error_monoclass = compute_max_error(dev_examples, classes->length);
 				if(use_max_fmeasure) dev_error = compute_max_fmeasure(dev_examples, fmeasure_class_id, &threshold, NULL, NULL);
 				if(optimal_iterations!=0 && ((!use_max_fmeasure && dev_error<minimum_test_error) || (use_max_fmeasure && dev_error>minimum_test_error)))
 				{
@@ -2795,9 +2822,11 @@ int main(int argc, char** argv)
 				}
 			}
 			double test_error=NAN;
+			double test_error_monoclass=NAN;
 			if(test_examples!=NULL)
 			{
 				test_error = compute_test_error(classifiers, test_examples, iteration, classes->length); // compute error rate on test
+				if (display_maxclass_error) test_error_monoclass = compute_max_error(test_examples, classes->length);
 				if(use_max_fmeasure) test_error = compute_max_fmeasure(test_examples, fmeasure_class_id, &threshold, NULL, NULL);
 			}
 			if(dev_examples==NULL && test_examples!=NULL)
@@ -2836,7 +2865,8 @@ int main(int argc, char** argv)
 			}
 			//theoretical_error*=classifier->objective;
 			theoretical_error=NAN;
-			fprintf(stdout,"rnd %d: wh-err= %f th-err= %f dev= %f test= %f train= %f\n",iteration+1,classifier->objective,theoretical_error,dev_error,test_error,error);
+			if (display_maxclass_error) fprintf(stdout,"rnd %d: wh-err= %f th-err= %f dev= %f test= %f train= %f mc-dev= %f mc-test= %f\n",iteration+1,classifier->objective,theoretical_error,dev_error,test_error,error,dev_error_monoclass,test_error_monoclass);
+			else fprintf(stdout,"rnd %d: wh-err= %f th-err= %f dev= %f test= %f train= %f\n",iteration+1,classifier->objective,theoretical_error,dev_error,test_error,error);
 		}
 	}
 	for(;iteration<maximum_iterations;iteration++)
@@ -2924,11 +2954,13 @@ int main(int argc, char** argv)
 		double dev_recall = NAN;
 		double dev_precision = NAN;
 		double dev_error=NAN;
+		double dev_error_monoclass=NAN;
 		double threshold = NAN;
 		if(dev_examples!=NULL)
 		{
 			dev_error = compute_test_error(classifiers, dev_examples, iteration, classes->length); // compute error rate on test
 			if(use_max_fmeasure) dev_error = compute_max_fmeasure(dev_examples, fmeasure_class_id, &threshold, &dev_recall, &dev_precision);
+			if (display_maxclass_error) dev_error_monoclass = compute_max_error(dev_examples, classes->length);
 			if(optimal_iterations!=0 && ((!use_max_fmeasure && dev_error<minimum_test_error) || (use_max_fmeasure && dev_error>minimum_test_error)))
 			{
 				minimum_test_error=dev_error;
@@ -2937,12 +2969,14 @@ int main(int argc, char** argv)
 			}
 		}
 		double test_error=NAN;
+		double test_error_monoclass=NAN;
 		double test_recall = NAN;
 		double test_precision = NAN;
 		double test_threshold = NAN;
 		if(test_examples!=NULL)
 		{
 			test_error = compute_test_error(classifiers, test_examples, iteration, classes->length); // compute error rate on test
+			if (display_maxclass_error) test_error_monoclass = compute_max_error(test_examples, classes->length);
 			if(use_max_fmeasure) test_error = compute_max_fmeasure(test_examples, fmeasure_class_id, &test_threshold, &test_recall, &test_precision);
 		}
 		if(dev_examples==NULL && test_examples!=NULL)
@@ -2980,8 +3014,16 @@ int main(int argc, char** argv)
 			}
 		}
 		theoretical_error*=classifier->objective;
-		if(use_max_fmeasure) fprintf(stdout,"rnd %d: wh-err= %f th-err= %f dev= %f (R=%.3f, P=%.3f) test= %f (R=%.3f, P=%.3f) train= %f (R=%.3f, P=%.3f)\n",iteration+1,classifier->objective,theoretical_error,dev_error,dev_recall, dev_precision, test_error, test_recall, test_precision, error, train_recall, train_precision);
-		else fprintf(stdout,"rnd %d: wh-err= %f th-err= %f dev= %f test= %f train= %f\n",iteration+1,classifier->objective,theoretical_error,dev_error,test_error,error);
+		if (display_maxclass_error)
+		{
+			if(use_max_fmeasure) fprintf(stdout,"rnd %d: wh-err= %f th-err= %f dev= %f (R=%.3f, P=%.3f) test= %f (R=%.3f, P=%.3f) train= %f (R=%.3f, P=%.3f) mc-dev= %f mc-test= %f\n",iteration+1,classifier->objective,theoretical_error,dev_error,dev_recall, dev_precision, test_error, test_recall, test_precision, error, train_recall, train_precision,dev_error_monoclass,test_error_monoclass);
+			else fprintf(stdout,"rnd %d: wh-err= %f th-err= %f dev= %f test= %f train= %f mc-dev= %f mc-test= %f\n",iteration+1,classifier->objective,theoretical_error,dev_error,test_error,error,dev_error_monoclass,test_error_monoclass);
+		}
+		else
+		{
+			if(use_max_fmeasure) fprintf(stdout,"rnd %d: wh-err= %f th-err= %f dev= %f (R=%.3f, P=%.3f) test= %f (R=%.3f, P=%.3f) train= %f (R=%.3f, P=%.3f)\n",iteration+1,classifier->objective,theoretical_error,dev_error,dev_recall, dev_precision, test_error, test_recall, test_precision, error, train_recall, train_precision);
+			else fprintf(stdout,"rnd %d: wh-err= %f th-err= %f dev= %f test= %f train= %f\n",iteration+1,classifier->objective,theoretical_error,dev_error,test_error,error);
+		}
 		if(save_model_at_each_iteration) save_model(classifiers, classes, model_name->data, 0, 0);
         fflush(stdout);
 	}
