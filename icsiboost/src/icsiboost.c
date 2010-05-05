@@ -1155,6 +1155,9 @@ vector_t* load_examples_multilabel(const char* filename, vector_t* templates, ve
 					hashtable_t* bag_of_words=hashtable_new();
 					string_t* field_string=string_new(token->data);
 					array_t* experts=text_expert(template, field_string);
+                    if(template->type == FEATURE_TYPE_SET && experts->length != 1) {
+                        die("column %d \"%s\" cannot handle space-separated value \"%s\", line %d in %s", i, template->name->data, field_string->data, line_num, filename);
+                    }
 					for(j=0; j<experts->length ; j++)
 					{
 						string_t* expert = array_get(experts, j);
@@ -1162,7 +1165,7 @@ vector_t* load_examples_multilabel(const char* filename, vector_t* templates, ve
 						if(tokeninfo == NULL && !in_test)
 						{
 							if(in_test)tokeninfo=vector_get(template->tokens,0); // default to the unknown token
-							else if(template->type == FEATURE_TYPE_TEXT || template->type == FEATURE_TYPE_SET) // update the dictionary with the new token
+							else if(template->type == FEATURE_TYPE_TEXT) // || template->type == FEATURE_TYPE_SET) // update the dictionary with the new token
 							{
 								tokeninfo = (tokeninfo_t*)MALLOC(sizeof(tokeninfo_t));
 								tokeninfo->id = template->tokens->length;
@@ -2437,235 +2440,239 @@ int main(int argc, char** argv)
 					{
 						int j;
 						array_t* experts=text_expert(template, token);
-						for(j=0; j<experts->length; j++)
-						{
-							string_t* expert=array_get(experts, j);
-							tokeninfo_t* tokeninfo=hashtable_get(template->dictionary, expert->data, expert->length);
+                        if(template->type == FEATURE_TYPE_SET && experts->length != 1) {
+                            die("value \"%s\" was not described in the .names file, line %d, column %d (%s) in %s", token->data, line_num, i, template->name->data, "stdin");
+                        }
+                        for(j=0; j<experts->length; j++)
+                        {
+                            string_t* expert=array_get(experts, j);
+                            tokeninfo_t* tokeninfo=hashtable_get(template->dictionary, expert->data, expert->length);
                             int id = -1;
-							if(tokeninfo!=NULL) {
-								hashtable_set(subtokens, &tokeninfo->id, sizeof(tokeninfo->id), tokeninfo);
+                            if(tokeninfo!=NULL) {
+                                hashtable_set(subtokens, &tokeninfo->id, sizeof(tokeninfo->id), tokeninfo);
                                 id = tokeninfo->id;
-                            } else {
+                            } else if(template->type == FEATURE_TYPE_SET) {
+                                die("token \"%s\" was not defined in names file, line %d in %s", expert->data, line_num, "stdin");
                             }
                             if(verbose) fprintf(stderr, "  EXPERT(%s): \"%s\" (id=%d)\n", template->name->data, expert->data, id);
-						}
-						string_array_free(experts);
-					}
-					int j;
-					for(j=0; j<template->classifiers->length; j++)
-					{
-						weakclassifier_t* classifier=vector_get(template->classifiers, j);
-						if(hashtable_get(subtokens, &classifier->token, sizeof(classifier->token))==NULL) {
+                        }
+                        string_array_free(experts);
+                    }
+                    int j;
+                    for(j=0; j<template->classifiers->length; j++)
+                    {
+                        weakclassifier_t* classifier=vector_get(template->classifiers, j);
+                        if(hashtable_get(subtokens, &classifier->token, sizeof(classifier->token))==NULL) {
                             if(verbose) {
                                 fprintf(stderr, "    WEAKC %s=%d: C1 (absent)", classifier->template->name->data, classifier->token);
-							    for(l=0; l<classes->length; l++) {
+                                for(l=0; l<classes->length; l++) {
                                     fprintf(stderr, " %g", classifier->alpha*classifier->c1[l]);
                                 }
                                 fprintf(stderr, "\n");
                             }
-							for(l=0; l<classes->length; l++) score[l]+=classifier->alpha*classifier->c1[l];
-						} else {
+                            for(l=0; l<classes->length; l++) score[l]+=classifier->alpha*classifier->c1[l];
+                        } else {
                             if(verbose) {
                                 fprintf(stderr, "    WEAKC %s=%d: C2 (present)", classifier->template->name->data, classifier->token);
-							    for(l=0; l<classes->length; l++) {
+                                for(l=0; l<classes->length; l++) {
                                     fprintf(stderr, " %g", classifier->alpha*classifier->c2[l]);
                                 }
                                 fprintf(stderr, "\n");
                             }
-							for(l=0; l<classes->length; l++) score[l]+=classifier->alpha*classifier->c2[l];
+                            for(l=0; l<classes->length; l++) score[l]+=classifier->alpha*classifier->c2[l];
                         }
-					}
-					hashtable_free(subtokens);
-				}
-				else if(template->type == FEATURE_TYPE_CONTINUOUS)
-				{
-					float value = NAN;
-					if(string_cmp_cstr(token,"?")!=0)value=string_to_float(token);
-					int j;
-					for(j=0; j<template->classifiers->length; j++)
-					{
-						weakclassifier_t* classifier=vector_get(template->classifiers, j);
-						if(isnan(value)) {
+                    }
+                    hashtable_free(subtokens);
+                }
+                else if(template->type == FEATURE_TYPE_CONTINUOUS)
+                {
+                    float value = NAN;
+                    if(string_cmp_cstr(token,"?")!=0)value=string_to_float(token);
+                    int j;
+                    for(j=0; j<template->classifiers->length; j++)
+                    {
+                        weakclassifier_t* classifier=vector_get(template->classifiers, j);
+                        if(isnan(value)) {
                             if(verbose) {
                                 fprintf(stderr, "    WEAKC %s=nan: C0 (unk)", classifier->template->name->data);
-							    for(l=0; l<classes->length; l++) {
+                                for(l=0; l<classes->length; l++) {
                                     fprintf(stderr, " %g", classifier->alpha*classifier->c1[l]);
                                 }
                                 fprintf(stderr, "\n");
                             }
-							for(l=0; l<classes->length; l++) score[l]+=classifier->alpha*classifier->c0[l];
-						} else if(value < classifier->threshold) {
+                            for(l=0; l<classes->length; l++) score[l]+=classifier->alpha*classifier->c0[l];
+                        } else if(value < classifier->threshold) {
                             if(verbose) {
                                 fprintf(stderr, "    WEAKC %s<%f: C1 (<)", classifier->template->name->data, classifier->threshold);
-							    for(l=0; l<classes->length; l++) {
+                                for(l=0; l<classes->length; l++) {
                                     fprintf(stderr, " %g", classifier->alpha*classifier->c1[l]);
                                 }
                                 fprintf(stderr, "\n");
                             }
-							for(l=0; l<classes->length; l++) score[l]+=classifier->alpha*classifier->c1[l];
-						} else {
+                            for(l=0; l<classes->length; l++) score[l]+=classifier->alpha*classifier->c1[l];
+                        } else {
                             if(verbose) {
                                 fprintf(stderr, "    WEAKC %s>=%f: C2 (>=)", classifier->template->name->data, classifier->threshold);
-							    for(l=0; l<classes->length; l++) {
+                                for(l=0; l<classes->length; l++) {
                                     fprintf(stderr, " %g", classifier->alpha*classifier->c2[l]);
                                 }
                                 fprintf(stderr, "\n");
                             }
-							for(l=0; l<classes->length; l++) score[l]+=classifier->alpha*classifier->c2[l];
+                            for(l=0; l<classes->length; l++) score[l]+=classifier->alpha*classifier->c2[l];
                         }
-					}
-				}
-				// FEATURE_TYPE_IGNORE
-			}
-			/*string_t* true_class=NULL;
-			vector_t* tokens=array_to_vector(array_of_tokens);
-			if(tokens->length > templates->length)
-			{
-				true_class=vector_get(tokens, tokens->length-1);
-				while(true_class->data[true_class->length-1]=='.')
-				{
-					true_class->data[true_class->length-1]='\0';
-					true_class->length--;
-				}
-			}*/
-			int example_classes[classes->length];
-			memset(example_classes, 0, sizeof(int) * classes->length);
-			if(array_of_tokens->length > templates->length)
-			{
-				string_t* last_token = array_get(array_of_tokens, templates->length);
-				array_t* array_of_labels = string_split(last_token, "( *\\.$|  *)", NULL);
-				int j;
-				for(j=0; j<array_of_labels->length; j++)
-				{
-					string_t* class = array_get(array_of_labels, j);
-					for(l=0; l<classes->length; l++)
-					{
-						string_t* other = vector_get(classes, l);
-						if(string_eq(other, class))
-						{
-							example_classes[l] = 1;
-							break;
-						}
-					}
-					if(l == classes->length) die("unknown class label \"%s\", line %d in %s", class->data, line_num, "stdin");
-				}
-				string_array_free(array_of_labels);
-			}
-			for(l=0; l<classes->length; l++)
-			{
-				score[l]/=sum_of_alpha;
-				if(output_posteriors)
-				{
-					score[l] = 1.0/(1.0+exp(-2*sum_of_alpha*score[l]));
-					score[l]-=decision_threshold;
-				}
-			}
-			if(!dryrun_mode)
-			{
-				if(sequence_classification == 1)
-				{
-					array_t* predicted_labels = array_new();
-					for(l=0; l<classes->length; l++)
-					{
-						if(score[l]>0) array_push(predicted_labels, vector_get(classes, l));
-					}
-					string_free(previous_decision);
-					previous_decision = string_join_cstr(" ", predicted_labels);
-					fprintf( stdout, "previous_decision = [%s]\n", previous_decision->data);
-					array_free(predicted_labels);
-				}
-				if(classification_output==0)
-				{
-					for(l=0; l<classes->length; l++)
-					{
-						fprintf(stdout, "%d ", example_classes[l]);
-					}
-					//fprintf(stdout," scores:");
-					int erroneous_example = 0;
-					for(l=0; l<classes->length; l++)
-					{
-						fprintf(stdout,"%.12f",score[l]+decision_threshold);
-						if(l<classes->length-1)fprintf(stdout," ");
-						if((score[l]<=0 && example_classes[l]!=0))erroneous_example = 1;
-						if((score[l]>0 && example_classes[l]==0))erroneous_example = 1;
-						//fprintf(stdout, " %f", score[l]);
-					}
-					//fprintf(stdout, " %s\n", erroneous_example ? "ERROR" : "OK" );
-					if(erroneous_example == 1) errors++;
-					fprintf(stdout,"\n");
-				}
-				else
-				{
-					fprintf(stdout,"\n\n");
-					for(i=0; i<templates->length; i++)
-					{
-						template_t* template=vector_get(templates,i);
-						string_t* token=array_get(array_of_tokens,i);
-						fprintf(stdout,"%s: %s\n", template->name->data, token->data);
-					}
-					/*if(true_class!=NULL)
-					{*/
-						fprintf(stdout,"correct label = ");
-						for(l=0; l<classes->length; l++)
-						{
-							if(example_classes[l]==1)
-							{
-								string_t* class = vector_get(classes, l);
-								fprintf(stdout,"%s ", class->data);
-							}
-						}
-						fprintf(stdout,"\n");
-						int erroneous_example = 0;
-						for(l=0; l<classes->length; l++)
-						{
-							string_t* class=vector_get(classes,l);
-							fprintf(stdout,"%s%s % 5f : %s \n", example_classes[l]==1?"*":" ",
-									(score[l]>0?">":(example_classes[l]==1?"*":" ")),score[l]+decision_threshold,class->data);
-							if((!(score[l]>0) && example_classes[l]!=0))
-							{
-								erroneous_example=1;
-								by_class_errors[l]++;
-							}
-                            else if((score[l]>0 && example_classes[l]==0))
-							{
-								erroneous_example=1;
-								//by_class_errors[l]++;
-							}
-							if(example_classes[l]!=0)
-								by_class_totals[l]++;
-						}
-						if(erroneous_example == 1) errors++;
-					/*}
-					else
-					{
-						fprintf(stdout,"correct label = ?\n");
-						for(l=0; l<classes->length; l++)
-						{
-							string_t* class=vector_get(classes,l);
-							fprintf(stdout,"   % 5f : %s\n", score[l],class->data);
-						}
-					}*/
-				}
-			}
-			string_array_free(array_of_tokens);
-			string_free(line);
-			num_examples++;
-		}
-		if(!dryrun_mode && classification_output!=0)
-		{
-			fprintf(stderr,"EXAMPLE ERROR RATE: %f (%d/%d)\n",(double)errors/(double)(num_examples), errors, num_examples);
-			int l;
-			for(l=0; l<classes->length; l++)
-			{
-				string_t* class = vector_get(classes, l);
-				fprintf(stderr, "  %s: %f (%d/%d)\n", class->data,
-					(by_class_totals[l]==0 ? NAN : (double)by_class_errors[l]/(double)by_class_totals[l]),
-					by_class_errors[l], by_class_totals[l]);
-			}
-		}
-		string_free(previous_decision);
-		exit(0);
-	}
+                    }
+                }
+                // FEATURE_TYPE_IGNORE
+            }
+            /*string_t* true_class=NULL;
+              vector_t* tokens=array_to_vector(array_of_tokens);
+              if(tokens->length > templates->length)
+              {
+              true_class=vector_get(tokens, tokens->length-1);
+              while(true_class->data[true_class->length-1]=='.')
+              {
+              true_class->data[true_class->length-1]='\0';
+              true_class->length--;
+              }
+              }*/
+            int example_classes[classes->length];
+            memset(example_classes, 0, sizeof(int) * classes->length);
+            if(array_of_tokens->length > templates->length)
+            {
+                string_t* last_token = array_get(array_of_tokens, templates->length);
+                array_t* array_of_labels = string_split(last_token, "( *\\.$|  *)", NULL);
+                int j;
+                for(j=0; j<array_of_labels->length; j++)
+                {
+                    string_t* class = array_get(array_of_labels, j);
+                    for(l=0; l<classes->length; l++)
+                    {
+                        string_t* other = vector_get(classes, l);
+                        if(string_eq(other, class))
+                        {
+                            example_classes[l] = 1;
+                            break;
+                        }
+                    }
+                    if(l == classes->length) die("unknown class label \"%s\", line %d in %s", class->data, line_num, "stdin");
+                }
+                string_array_free(array_of_labels);
+            }
+            for(l=0; l<classes->length; l++)
+            {
+                score[l]/=sum_of_alpha;
+                if(output_posteriors)
+                {
+                    score[l] = 1.0/(1.0+exp(-2*sum_of_alpha*score[l]));
+                    score[l]-=decision_threshold;
+                }
+            }
+            if(!dryrun_mode)
+            {
+                if(sequence_classification == 1)
+                {
+                    array_t* predicted_labels = array_new();
+                    for(l=0; l<classes->length; l++)
+                    {
+                        if(score[l]>0) array_push(predicted_labels, vector_get(classes, l));
+                    }
+                    string_free(previous_decision);
+                    previous_decision = string_join_cstr(" ", predicted_labels);
+                    fprintf( stdout, "previous_decision = [%s]\n", previous_decision->data);
+                    array_free(predicted_labels);
+                }
+                if(classification_output==0)
+                {
+                    for(l=0; l<classes->length; l++)
+                    {
+                        fprintf(stdout, "%d ", example_classes[l]);
+                    }
+                    //fprintf(stdout," scores:");
+                    int erroneous_example = 0;
+                    for(l=0; l<classes->length; l++)
+                    {
+                        fprintf(stdout,"%.12f",score[l]+decision_threshold);
+                        if(l<classes->length-1)fprintf(stdout," ");
+                        if((score[l]<=0 && example_classes[l]!=0))erroneous_example = 1;
+                        if((score[l]>0 && example_classes[l]==0))erroneous_example = 1;
+                        //fprintf(stdout, " %f", score[l]);
+                    }
+                    //fprintf(stdout, " %s\n", erroneous_example ? "ERROR" : "OK" );
+                    if(erroneous_example == 1) errors++;
+                    fprintf(stdout,"\n");
+                }
+                else
+                {
+                    fprintf(stdout,"\n\n");
+                    for(i=0; i<templates->length; i++)
+                    {
+                        template_t* template=vector_get(templates,i);
+                        string_t* token=array_get(array_of_tokens,i);
+                        fprintf(stdout,"%s: %s\n", template->name->data, token->data);
+                    }
+                    /*if(true_class!=NULL)
+                      {*/
+                    fprintf(stdout,"correct label = ");
+                    for(l=0; l<classes->length; l++)
+                    {
+                        if(example_classes[l]==1)
+                        {
+                            string_t* class = vector_get(classes, l);
+                            fprintf(stdout,"%s ", class->data);
+                        }
+                    }
+                    fprintf(stdout,"\n");
+                    int erroneous_example = 0;
+                    for(l=0; l<classes->length; l++)
+                    {
+                        string_t* class=vector_get(classes,l);
+                        fprintf(stdout,"%s%s % 5f : %s \n", example_classes[l]==1?"*":" ",
+                                (score[l]>0?">":(example_classes[l]==1?"*":" ")),score[l]+decision_threshold,class->data);
+                        if((!(score[l]>0) && example_classes[l]!=0))
+                        {
+                            erroneous_example=1;
+                            by_class_errors[l]++;
+                        }
+                        else if((score[l]>0 && example_classes[l]==0))
+                        {
+                            erroneous_example=1;
+                            //by_class_errors[l]++;
+                        }
+                        if(example_classes[l]!=0)
+                            by_class_totals[l]++;
+                    }
+                    if(erroneous_example == 1) errors++;
+                    /*}
+                      else
+                      {
+                      fprintf(stdout,"correct label = ?\n");
+                      for(l=0; l<classes->length; l++)
+                      {
+                      string_t* class=vector_get(classes,l);
+                      fprintf(stdout,"   % 5f : %s\n", score[l],class->data);
+                      }
+                      }*/
+                }
+            }
+            string_array_free(array_of_tokens);
+            string_free(line);
+            num_examples++;
+        }
+        if(!dryrun_mode && classification_output!=0)
+        {
+            fprintf(stderr,"EXAMPLE ERROR RATE: %f (%d/%d)\n",(double)errors/(double)(num_examples), errors, num_examples);
+            int l;
+            for(l=0; l<classes->length; l++)
+            {
+                string_t* class = vector_get(classes, l);
+                fprintf(stderr, "  %s: %f (%d/%d)\n", class->data,
+                        (by_class_totals[l]==0 ? NAN : (double)by_class_errors[l]/(double)by_class_totals[l]),
+                        by_class_errors[l], by_class_totals[l]);
+            }
+        }
+        string_free(previous_decision);
+        exit(0);
+    }
 
 	double class_priors[classes->length];
 	// load a train, dev and test sets (if available)
