@@ -25,6 +25,9 @@ case `uname` in
 	*Darwin*)
 	CFLAGS="-fnested-functions -I/opt/local/include -L/opt/local/lib"
 	;;
+	*SunOS*)
+	CFLAGS="-I/usr/include/pcre"
+	;;
 esac
 # Checks for programs.
 AC_PROG_CC
