@@ -26,11 +26,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #include "utils/array.h"
 
 #ifdef HAVE_LIBPCRE // extended perl like regular expressions
-#ifdef __sun
-#include <pcre/pcre.h>
-#else
 #include <pcre.h>
-#endif
 #define USE_PCRE
 #else
 #include <regex.h>
