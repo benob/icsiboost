@@ -25,8 +25,9 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #include "utils/vector.h"
 #include "utils/array.h"
 
-#ifdef HAVE_PCRE // extended perl like regular expressions
-#include <pcre.h>
+#ifdef HAVE_LIBPCRE // extended perl like regular expressions
+#include <pcre/pcre.h>
+#define USE_PCRE
 #else
 #include <regex.h>
 #endif

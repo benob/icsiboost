@@ -44,10 +44,10 @@ typedef struct feature {
     int id;
 } feature_t;
 
-typedef struct label {
+typedef struct _label {
     const char* text;
     int id;
-} label_t;
+} _label_t;
 
 typedef struct classifier {
     double error;
@@ -97,9 +97,9 @@ int read_examples(const char* input, vector_t* features, vector_t* examples, vec
                 int length = current - word;
                 *current = '\0';
                 if(example->label == -1) {
-                    label_t* label = hashtable_get(text_to_label, word, length);
+                    _label_t* label = hashtable_get(text_to_label, word, length);
                     if(label == NULL) {
-                        label = malloc(sizeof(label_t));
+                        label = malloc(sizeof(_label_t));
                         if(label == NULL) die("unable to allocate memory for label");
                         label->id = labels->length;
                         label->text = strdup(word);
@@ -396,9 +396,9 @@ double compute_error(vector_t* examples, classifier_t* classifier, vector_t* lab
                 int length = current - word;
                 *current = '\0';
                 if(example->label == -1) {
-                    label_t* label = hashtable_get(text_to_label, word, length);
+                    _label_t* label = hashtable_get(text_to_label, word, length);
                     if(label == NULL) {
-                        label = malloc(sizeof(label_t));
+                        label = malloc(sizeof(_label_t));
                         if(label == NULL) die("unable to allocate memory for label");
                         label->id = labels->length;
                         label->text = strdup(word);
@@ -479,7 +479,7 @@ int main(int argc, char** argv) {
     FILE* model = fopen(argv[3], "w");
     if(model == NULL) die("writing model file '%s'", argv[3]);
     for(i = 0; i < labels->length; i++) {
-        label_t* label = (label_t*) vector_get(labels, i);
+        _label_t* label = (_label_t*) vector_get(labels, i);
         fprintf(model, "%s ", label->text);
     }
     fprintf(model, "\n");
@@ -490,7 +490,7 @@ int main(int argc, char** argv) {
         else classifier = find_best_classifier(examples, features, labels);
         update_weights(examples, classifier);
         double error = compute_error(examples, classifier, labels);
-        label_t* label = (label_t*) vector_get(labels, classifier->label);
+        _label_t* label = (_label_t*) vector_get(labels, classifier->label);
         fprintf(stdout, "\r%d err=%f %s:%s\n", i + 1, error, classifier->feature->text, label->text);
         fprintf(model, "%f %s %s\n", classifier->alpha, label->text, classifier->feature->text);
         fflush(model);

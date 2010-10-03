@@ -1873,6 +1873,9 @@ void print_version(char* program_name)
 
 int main(int argc, char** argv)
 {
+#ifdef _SET_NAN
+	NAN = sqrt(-1);
+#endif
 #ifdef DEBUG
 	init_debugging(argv[0],DEBUG_NON_INTERACTIVE);
 #endif
