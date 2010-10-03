@@ -41,6 +41,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <math.h>
 
 // you dont'want to use the garbage collector => not stable yet
 //#define USE_GC
