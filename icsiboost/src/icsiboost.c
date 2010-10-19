@@ -2626,23 +2626,49 @@ int main(int argc, char** argv)
                     }
                     fprintf(stdout,"\n");
                     int erroneous_example = 0;
-                    for(l=0; l<classes->length; l++)
-                    {
-                        string_t* class=vector_get(classes,l);
-                        fprintf(stdout,"%s%s % 5f : %s \n", example_classes[l]==1?"*":" ",
-                                (score[l]>0?">":(example_classes[l]==1?"*":" ")),score[l]+decision_threshold,class->data);
-                        if((!(score[l]>0) && example_classes[l]!=0))
-                        {
-                            erroneous_example=1;
-                            by_class_errors[l]++;
+                    if(display_maxclass_error) {
+                        double max = 0;
+                        int argmax = 0;
+                        int label = 0;
+                        for(l=0; l<classes->length; l++) {
+                            if(l == 0 || score[l] > max) {
+                                max = score[l];
+                                argmax = l;
+                            }
                         }
-                        else if((score[l]>0 && example_classes[l]==0))
-                        {
-                            erroneous_example=1;
-                            //by_class_errors[l]++;
+                        for(l=0; l<classes->length; l++) {
+                            string_t* class=vector_get(classes,l);
+                            fprintf(stdout,"%s%s % 5f : %s \n", example_classes[l]!=0?"*":" ",
+                                    (l == argmax?">":(example_classes[l]!=0?"*":" ")),score[l]+decision_threshold,class->data);
+                            if(example_classes[l] != 0) {
+                                by_class_totals[l]++;
+                                label = l;
+                            }
                         }
-                        if(example_classes[l]!=0)
-                            by_class_totals[l]++;
+                        if(label != argmax) {
+                            erroneous_example = 1;
+                            by_class_errors[label] += 1;
+                        }
+                    } else {
+                        for(l=0; l<classes->length; l++)
+                        {
+                            string_t* class=vector_get(classes,l);
+                            fprintf(stdout,"%s%s % 5f : %s \n", example_classes[l]!=0?"*":" ",
+                                    (score[l]>0?">":(example_classes[l]!=0?"*":" ")),score[l]+decision_threshold,class->data);
+                            if((!(score[l]>0) && example_classes[l]!=0))
+                            {
+                                erroneous_example=1;
+                                by_class_errors[l]++;
+                            }
+                            else if((score[l]>0 && example_classes[l]==0))
+                            {
+                                erroneous_example=1;
+                                by_class_errors[l]++;
+                            }
+                            if(example_classes[l]!=0) {
+                                by_class_totals[l]++;
+                            }
+                        }
                     }
                     if(erroneous_example == 1) errors++;
                     /*}
