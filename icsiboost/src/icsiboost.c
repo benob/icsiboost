@@ -47,6 +47,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #include <math.h>
 #include <time.h>
 #include <unistd.h>
+#include <float.h>
 
 // this is not recommended
 #ifdef USE_FLOATS
@@ -570,32 +571,47 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 	classifier->c2=MALLOC(sizeof(double)*num_classes);
 	double epsilon=smoothing/(num_classes*examples_vector->length);
 
+    double objective=0; // compute objective for threshold below any known value
+    for(l=0;l<num_classes;l++) // compute objective Z()
+    {
+        double w0 = weight[0][1][l]*weight[0][0][l]; if(w0 > 0) objective += SQRT(w0);
+        double w1 = weight[1][1][l]*weight[1][0][l]; if(w1 > 0) objective += SQRT(w1);
+        double w2 = weight[2][1][l]*weight[2][0][l]; if(w2 > 0) objective += SQRT(w2);
+    }
+    objective*=2;
+    if(objective-min_objective<-1e-11) // get argmin
+    {
+        classifier->objective=objective;
+        classifier->threshold=-DBL_MAX; // -infinity
+
+        min_objective=objective;
+        for(l=0;l<num_classes;l++) // update class weight
+        {
+            classifier->c0[l]=0.5*LOG((weight[0][1][l]+epsilon)/(weight[0][0][l]+epsilon));
+            classifier->c1[l]=0.5*LOG((weight[1][1][l]+epsilon)/(weight[1][0][l]+epsilon));
+            classifier->c2[l]=0.5*LOG((weight[2][1][l]+epsilon)/(weight[2][0][l]+epsilon));
+        }
+    }
 	for(i=0;i<examples_vector->length-1;i++) // compute the objective function at every possible threshold (in between examples)
 	{
 		int32_t example_id=ordered[i];
+		int32_t next_example_id=ordered[i+1];
 		example_t* example=examples[example_id];
 		//fprintf(stdout,"%zd %zd %f\n",i,vector_get_int32_t(ordered,i),vector_get_float(template->values,example_id));
-		if(isnan(values[example_id]))break; // skip unknown values
+		if(isnan(values[example_id]) || isnan(values[next_example_id]))break; // skip unknown values
 		//example_t* next_example=(example_t*)vector_get(examples,(size_t)next_example_id);
 		for(l=0;l<num_classes;l++) // update the objective function by putting the current example the other side of the threshold
 		{
 			weight[1][b(example,l)][l]+=example->weight[l];
 			weight[2][b(example,l)][l]-=example->weight[l];
 		}
-		int next_example_id=ordered[i+1];
 		if(values[example_id]==values[next_example_id])continue; // same value
 		double objective=0;
 		for(l=0;l<num_classes;l++) // compute objective Z()
 		{
-			/*if(weight[0][1][l]<0)weight[0][1][l]=0.0;
-			if(weight[0][0][l]<0)weight[0][0][l]=0.0;
-			if(weight[1][1][l]<0)weight[1][1][l]=0.0;
-			if(weight[1][0][l]<0)weight[1][0][l]=0.0;
-			if(weight[2][1][l]<0)weight[2][1][l]=0.0;
-			if(weight[2][0][l]<0)weight[2][0][l]=0.0;*/
-			objective+=SQRT(weight[0][1][l]*weight[0][0][l]);
-			objective+=SQRT(weight[1][1][l]*weight[1][0][l]);
-			objective+=SQRT(weight[2][1][l]*weight[2][0][l]);
+            double w0 = weight[0][1][l]*weight[0][0][l]; if(w0 > 0) objective += SQRT(w0);
+            double w1 = weight[1][1][l]*weight[1][0][l]; if(w1 > 0) objective += SQRT(w1);
+            double w2 = weight[2][1][l]*weight[2][0][l]; if(w2 > 0) objective += SQRT(w2);
 		}
 		objective*=2;
 		//fprintf(stdout,"DEBUG: column=%d threshold=%f obj=%f\n",column,(vector_get_float(next_example->features,column)+vector_get_float(example->features,column))/2,objective);
@@ -605,8 +621,8 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 			classifier->threshold=((double)values[next_example_id]+(double)values[example_id])/2.0; // threshold between current and next example
 
 			// fix continuous features with null variance -> this behavior is not compatible with boostexter
-			if(isnan(values[next_example_id])) classifier->threshold = values[example_id] + 1.0;
-			if(isnan(values[example_id])) classifier->threshold = values[next_example_id];
+			/*if(isnan(values[next_example_id])) classifier->threshold = values[example_id] + 1.0;
+			if(isnan(values[example_id])) classifier->threshold = values[next_example_id];*/
 
 			if(isnan(classifier->threshold))
 				die("threshold is nan, column=%d \"%s\", objective=%f, i=%zd, example_id=%d (%f) next_example_id=%d (%f)",column, template->name->data, objective,i, example_id, (double)values[example_id], next_example_id, (double)values[next_example_id]); // should not happend
