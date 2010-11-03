@@ -1644,6 +1644,9 @@ vector_t* load_model(vector_t* templates, vector_t* classes, char* filename, int
 							vector_push(template->tokens, tokeninfo);
 						}
 						current->token = tokeninfo->id;
+                        if(strchr(word->data, '#') != NULL) {
+                            warn("ngram-like tokens found in model, did you set the correct -W and -N options?");
+                        }
 					}
                     if(verbose) fprintf(stderr, "  SGRAM(%s) \"%s\" (id=%d)\n", current->template->name->data, word->data, current->token);
 				}
