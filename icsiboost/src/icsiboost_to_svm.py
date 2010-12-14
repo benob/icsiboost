@@ -132,7 +132,7 @@ if __name__ == '__main__':
             files.append(sys.argv[i])
         i += 1
 
-    if not names_file:
+    if not names_file or len(files) == 0:
         usage()
     feature_count = {}
     names, label_dict = load_names(names_file, ignore, ignore_regex, only, only_regex)
@@ -172,11 +172,13 @@ if __name__ == '__main__':
             if count >= cutoff:
                 feature_dict[feature] = len(feature_dict) + 1
     if output_dict_file:
+        print >>sys.stderr, "writing %s" % output_dict_file
         fp = open(output_dict_file, "w")
-        for feature in feature_dict:
-            fp.write("%s %d\n" % (feature, feature_dict[feature]))
+        for feature, value in sorted(feature_dict.items(), lambda x, y: cmp(x[1], y[1])):
+            fp.write("%s %d\n" % (feature, value))
         fp.close()
     for filename in files:
+        print >>sys.stderr, "writing %s%s" % (filename, extension)
         fp = open(filename)
         output_fp = open(filename + extension, "w")
         for line in fp:
@@ -185,20 +187,26 @@ if __name__ == '__main__':
             for i in xrange(len(fields) - 1):
                 if names[i] == None: continue
                 if names[i][1] == "set":
-                    features.append([names[i][0] + ":" + fields[i],1])
+                    features.append([names[i][0] + ":" + fields[i], 1])
                 elif names[i][1] == "text":
                     if text_expert == "ngram":
-                        features.extend([[names[i][0] + ":" + x,1] for x in get_ngrams(fields[i].split(), ngram_length)])
+                        features.extend([[names[i][0] + ":" + x, 1] for x in get_ngrams(fields[i].split(), ngram_length)])
                     elif text_expert == "sgram":
-                        features.extend([[names[i][0] + ":" + x,1] for x in get_sgrams(fields[i].split(), ngram_length)])
+                        features.extend([[names[i][0] + ":" + x, 1] for x in get_sgrams(fields[i].split(), ngram_length)])
                     elif text_expert == "fgram":
-                        features.extend([[names[i][0] + ":" + x,1] for x in get_fgrams(fields[i].split(), ngram_length)])
+                        features.extend([[names[i][0] + ":" + x, 1] for x in get_fgrams(fields[i].split(), ngram_length)])
                 elif names[i][1] == "continuous":
                     if fields[i] != "?":
                         features.append([names[i][0] + ":", fields[i]])
             features = [[feature_dict[x[0]], x[1]] for x in features if x[0] in feature_dict]
-            if len(features) == 0 and not keep_empty_examples: continue
+            unique_features = {}
+            for feature in features:
+                if feature[0] not in unique_features:
+                    unique_features[feature[0]] = float(feature[1])
+                else:
+                    unique_features[feature[0]] += float(feature[1])
+            if len(unique_features) == 0 and not keep_empty_examples: continue
             label = re.sub(r'\.$', '', fields[-1])
-            output_fp.write(("%d " % label_dict[label]) + " ".join(["%d:%g" % (x[0],x[1]) for x in sorted(features, lambda x ,y: cmp(x[0], y[0]))]) + "\n")
+            output_fp.write(("%d " % label_dict[label]) + " ".join(["%d:%g" % (x[0],x[1]) for x in sorted(unique_features.items(), lambda x ,y: cmp(x[0], y[0]))]) + "\n")
         fp.close()
         output_fp.close()
