@@ -214,6 +214,7 @@ string_t* string_join_cstr(const char* separator, array_t* parts)
 }
 
 #ifdef USE_PCRE
+#warning using pcre regexp
 
 typedef struct regexstatus {
 	pcre* expression;
@@ -433,7 +434,7 @@ array_t* string_array_grep(array_t* input, const char* pattern, const char* flag
 	{
 		string_t* string=array_get(input,i);
 		int result=pcre_exec(status->expression,NULL,string->data,string->length,0,0,NULL,0);
-		if(string!=NULL && ((result<0 && (status->flags & REGEX_FLAG_REVERSE)==0) || (result>=0 && (status->flags & REGEX_FLAG_REVERSE)!=0)))
+		if(string!=NULL && ((result<0 && (status->flags & REGEX_FLAG_REVERSE)!=0) || (result>=0 && (status->flags & REGEX_FLAG_REVERSE)==0)))
 		{
 			if(output==NULL)output=array_new();
 			array_push(output, string_copy(string));
@@ -488,6 +489,7 @@ int string_replace(string_t* input, const char* pattern, const char* replacement
 }
 
 #else // posix regex
+#warning using posix regexp
 
 typedef struct regexstatus {
 	regex_t expression;

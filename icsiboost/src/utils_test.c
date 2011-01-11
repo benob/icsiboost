@@ -84,7 +84,7 @@ int main(int argc, char** argv)
 	fprintf(stdout,"memory used: %lu\n",(unsigned long)GC_get_heap_size());
 #endif
 //#ifdef DEBUG
-	init_debugging(argv[0],1);
+	init_debugging(argv[0],0);
 //#endif
 	int i,j;
 	fprintf(stdout,"---------- testing vectors\n");
@@ -212,6 +212,7 @@ int main(int argc, char** argv)
 	array_free(array);
 	array=string_split(string,"\\+",NULL);
 	array2=string_array_grep(array," .* ","!"); // reversed grep
+	//array2=string_array_grep(array," .* ", ""); // reversed grep
 	for(i=0;i<array2->length;i++)
 	{
 		fprintf(stdout,"grep found [%s]\n",((string_t*)array_get(array2,i))->data);
