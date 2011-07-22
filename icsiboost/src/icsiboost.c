@@ -2414,10 +2414,24 @@ int main(int argc, char** argv)
 		if(test_time_iterations > classifiers->length || test_time_iterations == -1) test_time_iterations = classifiers->length;
 		double sum_of_alpha=0;
 		int errors=0;
-		int by_class_errors[classes->length];
+		int errors_argmax = 0;
+		//int by_class_errors[classes->length];
+		//int by_class_errors_argmax[classes->length];
 		int by_class_totals[classes->length];
-		memset(by_class_errors, 0, sizeof(int) * classes->length);
+		int by_class_totals_argmax[classes->length];
+		int by_class_pred[classes->length];
+		int by_class_pred_argmax[classes->length];
+		int by_class_correct[classes->length];
+		int by_class_correct_argmax[classes->length];
+		//memset(by_class_errors, 0, sizeof(int) * classes->length);
 		memset(by_class_totals, 0, sizeof(int) * classes->length);
+		memset(by_class_pred, 0, sizeof(int) * classes->length);
+		memset(by_class_correct, 0, sizeof(int) * classes->length);
+		//memset(by_class_errors_argmax, 0, sizeof(int) * classes->length);
+		memset(by_class_totals_argmax, 0, sizeof(int) * classes->length);
+		memset(by_class_pred_argmax, 0, sizeof(int) * classes->length);
+		memset(by_class_correct_argmax, 0, sizeof(int) * classes->length);
+		
 		int num_examples=0;
 		for(i=0;i<classifiers->length;i++)
 		{
@@ -2613,20 +2627,38 @@ int main(int argc, char** argv)
                     }
                     //fprintf(stdout," scores:");
                     int erroneous_example = 0;
+					int erroneous_example_argmax = 0;
+					double max = 0.0;
+					int max_class = -10000;
                     for(l=0; l<classes->length; l++)
                     {
                         fprintf(stdout,"%.12f",score[l]+decision_threshold);
                         if(l<classes->length-1)fprintf(stdout," ");
                         if((score[l]<=0 && example_classes[l]!=0))erroneous_example = 1;
                         if((score[l]>0 && example_classes[l]==0))erroneous_example = 1;
+						if (score[l]>max) {
+							max = score[l];
+							max_class = l;
+						}
                         //fprintf(stdout, " %f", score[l]);
                     }
                     //fprintf(stdout, " %s\n", erroneous_example ? "ERROR" : "OK" );
                     if(erroneous_example == 1) errors++;
+					
+					if (example_classes[max_class]==0) {
+						erroneous_example_argmax = 1;
+					}
+					
+					if (erroneous_example_argmax == 1) {
+						errors_argmax++;
+					}
+					
                     fprintf(stdout,"\n");
                 }
                 else
                 {
+					int erroneous_example_argmax = 0;
+					
                     fprintf(stdout,"\n\n");
                     for(i=0; i<templates->length; i++)
                     {
@@ -2668,30 +2700,70 @@ int main(int argc, char** argv)
                         }
                         if(label != argmax) {
                             erroneous_example = 1;
-                            by_class_errors[label] += 1;
+                            //by_class_errors[label] += 1;
                         }
+						else {
+							by_class_correct_argmax[argmax]++;
+						}
+						by_class_pred_argmax[argmax]++;
+						
                     } else {
+						
+						double max = 0;
+						int argmax = 0;
+						int label = 0;
+						
                         for(l=0; l<classes->length; l++)
                         {
+							if (l == 0 || score[l] > max) {
+								max = score[l];
+								argmax = l;
+							}
                             string_t* class=vector_get(classes,l);
                             fprintf(stdout,"%s%s % 5f : %s \n", example_classes[l]!=0?"*":" ",
                                     (score[l]>0?">":(example_classes[l]!=0?"*":" ")),score[l]+decision_threshold,class->data);
+							
+							if (example_classes[l]!=0) {
+								by_class_totals_argmax[l]++;
+								label = l;
+							}
+							
                             if((!(score[l]>0) && example_classes[l]!=0))
                             {
-                                erroneous_example=1;
-                                by_class_errors[l]++;
+								erroneous_example=1;
+								//by_class_errors[l]++;
                             }
                             else if((score[l]>0 && example_classes[l]==0))
                             {
-                                erroneous_example=1;
-                                by_class_errors[l]++;
+								erroneous_example=1;
+								//by_class_errors[l]++;
                             }
+							
+							if (score[l]>0) {
+								by_class_pred[l]++;
+							}
+							if (score[l]>0 && example_classes[l]!=0) {
+								by_class_correct[l]++;
+							}
+							
                             if(example_classes[l]!=0) {
                                 by_class_totals[l]++;
                             }
                         }
+						if (label != argmax) {
+							erroneous_example_argmax = 1;
+							//by_class_errors_argmax[label]++;
+						}
+						else {
+							by_class_correct_argmax[argmax]++;
+						}
+						by_class_pred_argmax[argmax]++;
+
                     }
                     if(erroneous_example == 1) errors++;
+					if (erroneous_example_argmax == 1) {
+						errors_argmax++;
+					}
                     /*}
                       else
                       {
@@ -2710,14 +2782,60 @@ int main(int argc, char** argv)
         }
         if(!dryrun_mode && classification_output!=0)
         {
-            fprintf(stderr,"EXAMPLE ERROR RATE: %f (%d/%d)\n",(double)errors/(double)(num_examples), errors, num_examples);
+            fprintf(stderr,"EXAMPLE ERROR RATE (>0): %f (%d/%d)\n",(double)errors/(double)(num_examples), errors, num_examples);
             int l;
             for(l=0; l<classes->length; l++)
             {
                 string_t* class = vector_get(classes, l);
-                fprintf(stderr, "  %s: %f (%d/%d)\n", class->data,
-                        (by_class_totals[l]==0 ? NAN : (double)by_class_errors[l]/(double)by_class_totals[l]),
-                        by_class_errors[l], by_class_totals[l]);
+				double precision, recall, f_measure;
+				
+				if (by_class_pred[l]!=0) {
+					precision = ((double)by_class_correct[l])/((double)by_class_pred[l]);
+				}
+				
+				if (by_class_totals[l]!=0) {
+					recall = ((double)by_class_correct[l])/((double)by_class_totals[l]);
+				}
+				else {
+					recall = 0;
+				}
+
+				if (recall!=0) {
+					f_measure = (2*precision*recall)/(precision+recall);
+				}
+				
+                fprintf(stderr, "  %s: r=%f p=%f f=%f (tp=%d, fp=%d, pp=%d)\n", class->data,
+                        (by_class_totals[l]==0 ? NAN : recall),
+						(by_class_pred[l]==0 ? NAN : precision),
+						(recall==0 ? NAN : f_measure),
+						by_class_correct[l], by_class_pred[l]-by_class_correct[l], by_class_totals[l]);
+            }
+			fprintf(stderr,"EXAMPLE ERROR RATE (argmax): %f (%d/%d)\n",(double)errors_argmax/(double)(num_examples), errors_argmax, num_examples);
+            for(l=0; l<classes->length; l++)
+            {
+                string_t* class = vector_get(classes, l);
+				double precision, recall, f_measure;
+				
+				if (by_class_pred_argmax[l]!=0) {
+					precision = ((double)by_class_correct_argmax[l])/((double)by_class_pred_argmax[l]);
+				}
+				
+				if (by_class_totals_argmax[l]!=0) {
+					recall = ((double)by_class_correct_argmax[l])/((double)by_class_totals_argmax[l]);
+				}
+				else {
+					recall = 0;
+				}
+				
+				if (recall!=0) {
+					f_measure = (2*precision*recall)/(precision+recall);
+				}
+				
+                fprintf(stderr, "  %s: r=%f p=%f f=%f (tp=%d, fp=%d, pp=%d)\n", class->data,
+                        (by_class_totals_argmax[l]==0 ? NAN : recall),
+						(by_class_pred_argmax[l]==0 ? NAN : precision),
+						(recall==0 ? NAN : f_measure),
+						by_class_correct_argmax[l], by_class_pred_argmax[l]-by_class_correct_argmax[l], by_class_totals_argmax[l]);
             }
         }
         string_free(previous_decision);
