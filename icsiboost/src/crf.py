@@ -17,7 +17,7 @@
 
 # decoder for CRF++, Benoit Favre <benoit.favre@gmail.com>, 2009-12-07
 # train with the -t option and use the text model
-# warining: the decoder is slow and memory inefficient
+# warning: the decoder is slow and memory inefficient
 
 import sys, re
 
