@@ -2987,7 +2987,7 @@ int main(int argc, char** argv)
 			weakclassifier_t* classifier = vector_get(classifiers, iteration);
 			double error=compute_classification_error(classifiers, examples, iteration, sum_of_weights, classes->length); // compute error rate and update weights
 			if(use_max_fmeasure) error = compute_max_fmeasure(examples, fmeasure_class_id, NULL, NULL, NULL);
-            if(display_maxclass_error) error = compute_max_error(examples, classes->length);
+            else if(display_maxclass_error) error = compute_max_error(examples, classes->length);
 			double dev_error=NAN;
 			//double dev_error_monoclass=NAN;
 			double threshold = NAN;
@@ -2995,7 +2995,7 @@ int main(int argc, char** argv)
 			{
 				dev_error = compute_test_error(classifiers, dev_examples, iteration, classes->length); // compute error rate on test
 				if(use_max_fmeasure) dev_error = compute_max_fmeasure(dev_examples, fmeasure_class_id, &threshold, NULL, NULL);
-				if(display_maxclass_error) dev_error= compute_max_error(dev_examples, classes->length);
+                else if(display_maxclass_error) dev_error= compute_max_error(dev_examples, classes->length);
 				if(optimal_iterations!=0 && ((!use_max_fmeasure && dev_error<minimum_test_error) || (use_max_fmeasure && dev_error>minimum_test_error)))
 				{
 					minimum_test_error=dev_error;
@@ -3008,8 +3008,8 @@ int main(int argc, char** argv)
 			if(test_examples!=NULL)
 			{
 				test_error = compute_test_error(classifiers, test_examples, iteration, classes->length); // compute error rate on test
-				if (display_maxclass_error) test_error = compute_max_error(test_examples, classes->length);
 				if(use_max_fmeasure) test_error = compute_max_fmeasure(test_examples, fmeasure_class_id, &threshold, NULL, NULL);
+                else if (display_maxclass_error) test_error = compute_max_error(test_examples, classes->length);
 			}
 			if(dev_examples==NULL && test_examples!=NULL)
 			{
@@ -3133,7 +3133,7 @@ int main(int argc, char** argv)
 		double train_recall = NAN;
 		double train_precision = NAN;
 		if(use_max_fmeasure) error = compute_max_fmeasure(examples, fmeasure_class_id, NULL, &train_recall, &train_precision);
-        if(display_maxclass_error) error = compute_max_error(examples, classes->length);
+        else if(display_maxclass_error) error = compute_max_error(examples, classes->length);
 		double dev_recall = NAN;
 		double dev_precision = NAN;
 		double dev_error=NAN;
@@ -3143,7 +3143,7 @@ int main(int argc, char** argv)
 		{
 			dev_error = compute_test_error(classifiers, dev_examples, iteration, classes->length); // compute error rate on test
 			if(use_max_fmeasure) dev_error = compute_max_fmeasure(dev_examples, fmeasure_class_id, &threshold, &dev_recall, &dev_precision);
-			if (display_maxclass_error) dev_error = compute_max_error(dev_examples, classes->length);
+            else if (display_maxclass_error) dev_error = compute_max_error(dev_examples, classes->length);
 			if(optimal_iterations!=0 && ((!use_max_fmeasure && dev_error<minimum_test_error) || (use_max_fmeasure && dev_error>minimum_test_error)))
 			{
 				minimum_test_error=dev_error;
@@ -3159,8 +3159,8 @@ int main(int argc, char** argv)
 		if(test_examples!=NULL)
 		{
 			test_error = compute_test_error(classifiers, test_examples, iteration, classes->length); // compute error rate on test
-			if (display_maxclass_error) test_error = compute_max_error(test_examples, classes->length);
 			if(use_max_fmeasure) test_error = compute_max_fmeasure(test_examples, fmeasure_class_id, &test_threshold, &test_recall, &test_precision);
+            else if (display_maxclass_error) test_error = compute_max_error(test_examples, classes->length);
 		}
 		if(dev_examples==NULL && test_examples!=NULL)
 		{
