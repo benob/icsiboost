@@ -24,7 +24,7 @@ utils = utils/vector.c utils/string.c utils/hashtable.c utils/array.c utils/mapp
 utils += utils/vector.h utils/string.h utils/hashtable.h utils/array.h utils/mapped.h utils/threads.h utils/debug.h utils/file.h utils/common.h
 classifier = examples.c examples.h
 
-bin_PROGRAMS = icsiboost samme
+bin_PROGRAMS = icsiboost
 check_PROGRAMS = utils_test
 icsiboost_SOURCES = icsiboost.c $(utils)
 #icsiboost_LDADD  = -lm -lpthread -lz -lpcre
@@ -32,6 +32,5 @@ icsiboost_SOURCES = icsiboost.c $(utils)
 #perceptron_LDADD  = -lm -lpthread -lz -lpcre
 utils_test_SOURCES = utils_test.c $(utils)
 #utils_test_LDADD  = -lm -lz -lpcre
-samme_SOURCES = samme.c $(utils)
 
 EXTRA_DIST = test_uci.sh
