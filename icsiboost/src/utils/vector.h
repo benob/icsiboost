@@ -28,6 +28,19 @@ inline void* _vector_get(vector_t* v, size_t index);
 inline void _vector_set(vector_t* v, size_t index, void* value);
 void _vector_insert_element(vector_t* v, int index, void* value);
 
+#define vector_declare_functions_for_type(type,null_value) \
+	vector_t* vector_new_##type(size_t initialSize); \
+	void vector_push_##type(vector_t* v, type value); \
+	type vector_pop_##type(vector_t* v); \
+	type vector_remove_element_##type(vector_t* v, size_t index); \
+	type vector_shift_##type(vector_t* v); \
+	void vector_unshift_##type(vector_t* v, type value); \
+	size_t vector_search_##type(vector_t* v, type value); \
+	size_t vector_search_sorted_##type(vector_t* v, type value, int (*comparator)(const void*,const void*)); \
+	inline type vector_get_##type(vector_t* v, size_t index); \
+	inline void vector_set_##type(vector_t* v, size_t index, type value); \
+	void vector_insert_element_##type(vector_t* v, int index, type value);
+
 #define vector_implement_functions_for_type(type,null_value) \
 	vector_t* vector_new_##type(size_t initialSize) { return _vector_new(initialSize,sizeof(type)); } \
 	void vector_push_##type(vector_t* v, type value) { _vector_push(v,&value); } \

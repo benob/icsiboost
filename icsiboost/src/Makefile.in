@@ -69,7 +69,7 @@ NORMAL_UNINSTALL = :
 PRE_UNINSTALL = :
 POST_UNINSTALL = :
 bin_PROGRAMS = icsiboost$(EXEEXT)
-check_PROGRAMS = utils_test$(EXEEXT)
+check_PROGRAMS = utils_test$(EXEEXT) test_api$(EXEEXT)
 subdir = src
 DIST_COMMON = $(srcdir)/Makefile.am $(srcdir)/Makefile.in \
 	$(top_srcdir)/depcomp
@@ -89,6 +89,9 @@ am__objects_1 = vector.$(OBJEXT) string.$(OBJEXT) hashtable.$(OBJEXT) \
 am_icsiboost_OBJECTS = icsiboost.$(OBJEXT) $(am__objects_1)
 icsiboost_OBJECTS = $(am_icsiboost_OBJECTS)
 icsiboost_LDADD = $(LDADD)
+am_test_api_OBJECTS = test_api.$(OBJEXT) IcsiBoost.$(OBJEXT)
+test_api_OBJECTS = $(am_test_api_OBJECTS)
+test_api_LDADD = $(LDADD)
 am_utils_test_OBJECTS = utils_test.$(OBJEXT) $(am__objects_1)
 utils_test_OBJECTS = $(am_utils_test_OBJECTS)
 utils_test_LDADD = $(LDADD)
@@ -100,8 +103,15 @@ COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
 	$(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
 CCLD = $(CC)
 LINK = $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o $@
-SOURCES = $(icsiboost_SOURCES) $(utils_test_SOURCES)
-DIST_SOURCES = $(icsiboost_SOURCES) $(utils_test_SOURCES)
+CXXCOMPILE = $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) \
+	$(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS)
+CXXLD = $(CXX)
+CXXLINK = $(CXXLD) $(AM_CXXFLAGS) $(CXXFLAGS) $(AM_LDFLAGS) $(LDFLAGS) \
+	-o $@
+SOURCES = $(icsiboost_SOURCES) $(test_api_SOURCES) \
+	$(utils_test_SOURCES)
+DIST_SOURCES = $(icsiboost_SOURCES) $(test_api_SOURCES) \
+	$(utils_test_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -121,6 +131,9 @@ CCDEPMODE = @CCDEPMODE@
 CFLAGS = @CFLAGS@
 CPP = @CPP@
 CPPFLAGS = @CPPFLAGS@
+CXX = @CXX@
+CXXDEPMODE = @CXXDEPMODE@
+CXXFLAGS = @CXXFLAGS@
 CYGPATH_W = @CYGPATH_W@
 DEFS = @DEFS@
 DEPDIR = @DEPDIR@
@@ -160,6 +173,7 @@ abs_srcdir = @abs_srcdir@
 abs_top_builddir = @abs_top_builddir@
 abs_top_srcdir = @abs_top_srcdir@
 ac_ct_CC = @ac_ct_CC@
+ac_ct_CXX = @ac_ct_CXX@
 am__include = @am__include@
 am__leading_dot = @am__leading_dot@
 am__quote = @am__quote@
@@ -205,8 +219,8 @@ utils = utils/vector.c utils/string.c utils/hashtable.c utils/array.c \
 	utils/common.c utils/vector.h utils/string.h utils/hashtable.h \
 	utils/array.h utils/mapped.h utils/threads.h utils/debug.h \
 	utils/file.h utils/common.h
-classifier = examples.c examples.h
 icsiboost_SOURCES = icsiboost.c $(utils)
+test_api_SOURCES = test_api.cc IcsiBoost.cc
 #icsiboost_LDADD  = -lm -lpthread -lz -lpcre
 #perceptron_SOURCES = perceptron.c $(utils) $(classifier)
 #perceptron_LDADD  = -lm -lpthread -lz -lpcre
@@ -216,7 +230,7 @@ EXTRA_DIST = test_uci.sh
 all: all-am
 
 .SUFFIXES:
-.SUFFIXES: .c .o .obj
+.SUFFIXES: .c .cc .o .obj
 $(srcdir)/Makefile.in:  $(srcdir)/Makefile.am  $(am__configure_deps)
 	@for dep in $?; do \
 	  case '$(am__configure_deps)' in \
@@ -293,6 +307,9 @@ clean-checkPROGRAMS:
 icsiboost$(EXEEXT): $(icsiboost_OBJECTS) $(icsiboost_DEPENDENCIES) $(EXTRA_icsiboost_DEPENDENCIES) 
 	@rm -f icsiboost$(EXEEXT)
 	$(LINK) $(icsiboost_OBJECTS) $(icsiboost_LDADD) $(LIBS)
+test_api$(EXEEXT): $(test_api_OBJECTS) $(test_api_DEPENDENCIES) $(EXTRA_test_api_DEPENDENCIES) 
+	@rm -f test_api$(EXEEXT)
+	$(CXXLINK) $(test_api_OBJECTS) $(test_api_LDADD) $(LIBS)
 utils_test$(EXEEXT): $(utils_test_OBJECTS) $(utils_test_DEPENDENCIES) $(EXTRA_utils_test_DEPENDENCIES) 
 	@rm -f utils_test$(EXEEXT)
 	$(LINK) $(utils_test_OBJECTS) $(utils_test_LDADD) $(LIBS)
@@ -303,6 +320,7 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/IcsiBoost.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/array.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/common.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/debug.Po@am__quote@
@@ -311,6 +329,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/icsiboost.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mapped.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/string.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/test_api.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/threads.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/utils_test.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/vector.Po@am__quote@
@@ -454,6 +473,20 @@ common.obj: utils/common.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	source='utils/common.c' object='common.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o common.obj `if test -f 'utils/common.c'; then $(CYGPATH_W) 'utils/common.c'; else $(CYGPATH_W) '$(srcdir)/utils/common.c'; fi`
+
+.cc.o:
+@am__fastdepCXX_TRUE@	$(CXXCOMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ $<
+@am__fastdepCXX_TRUE@	$(am__mv) $(DEPDIR)/$*.Tpo $(DEPDIR)/$*.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='$<' object='$@' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(CXXCOMPILE) -c -o $@ $<
+
+.cc.obj:
+@am__fastdepCXX_TRUE@	$(CXXCOMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ `$(CYGPATH_W) '$<'`
+@am__fastdepCXX_TRUE@	$(am__mv) $(DEPDIR)/$*.Tpo $(DEPDIR)/$*.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='$<' object='$@' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(CXXCOMPILE) -c -o $@ `$(CYGPATH_W) '$<'`
 
 ID: $(HEADERS) $(SOURCES) $(LISP) $(TAGS_FILES)
 	list='$(SOURCES) $(HEADERS) $(LISP) $(TAGS_FILES)'; \
