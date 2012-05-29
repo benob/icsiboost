@@ -22,6 +22,7 @@ namespace icsiboost {
             bool unknown;
         public:
             ContinuousFeature(const std::string& text);
+            ContinuousFeature(double _value, bool _unknown = false) : value(_value), unknown(_unknown) {  }
             virtual ~ContinuousFeature() { }
             double GetValue() const { return value; }
             bool IsUnknown() const { return unknown; }
@@ -97,12 +98,17 @@ namespace icsiboost {
             void AddFeature(const Feature* feature) {
                 features.push_back(feature);
             }
+            void SetFeature(int id, const Feature* feature) {
+                if(features.size() <= id) features.resize(id + 1);
+                if(features[id] != NULL) delete features[id];
+                features[id] = feature;
+            }
             const Feature* GetFeature(int column) const {
                 return features[column];
             }
             ~Example() {
                 for(std::vector<const Feature*>::const_iterator i = features.begin(); i != features.end(); i++)
-                    delete *i;
+                    if(*i != NULL) delete *i;
             }
     };
 
@@ -132,13 +138,19 @@ namespace icsiboost {
 
         public:
             Model(const std::string& stem, int _ngramLength = 1, int _ngramType = TEXT_TYPE_NGRAM);
+            Model(const std::string& stem, int _ngramLength, std::string _ngramType);
             ~Model() {
                 for(std::vector<Classifier*>::iterator i = classifiers.begin(); i != classifiers.end(); i++)
                     delete *i;
             }
             bool IsLoaded() const { return loaded; }
             bool ReadExample(const std::string& line, Example& output) const;
-            std::string Classify(const Example& example, std::vector<double> &scores) const;
+            void SetFeature(Example& example, const std::string& columnName, const std::string& text) const;
+            void SetFeature(Example& example, int column, const std::string& text) const;
+            void SetFeature(Example& example, const std::string& columnName, double value, bool unknown = false) const;
+            void SetFeature(Example& example, int column, double value, bool unknown = false) const;
+            std::string GetLabel(int id) const { return labels[id]; }
+            int Classify(const Example& example, std::vector<double> &scores) const;
     };
 
 }

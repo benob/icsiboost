@@ -125,6 +125,17 @@ namespace icsiboost {
         LoadShyp(stem + ".shyp");
     }
 
+    Model::Model(const std::string& stem, int _ngramLength, std::string _ngramType) : ngramLength(_ngramLength), ngramType(TEXT_TYPE_NGRAM), numIterations(0), loaded(false) {
+        if(_ngramType == "NGRAM") ngramType = TEXT_TYPE_NGRAM;
+        else if(_ngramType == "FGRAM") ngramType = TEXT_TYPE_FGRAM;
+        else if(_ngramType == "SGRAM") ngramType = TEXT_TYPE_SGRAM;
+        else {
+            std::cerr << "ERROR: unknown ngram type \"" << _ngramType << "\"\n";
+        }
+        LoadNames(stem + ".names");
+        LoadShyp(stem + ".shyp");
+    }
+
     void Model::LoadNames(const std::string& filename) {
         mapping.clear();
         types.clear();
@@ -266,20 +277,7 @@ namespace icsiboost {
         std::vector<std::string> fields;
         Split(line, fields, ",", false);
         if(fields.size() == columnTypes.size() || fields.size() == columnTypes.size() + 1) {
-            for(size_t i = 0; i < fields.size(); i++) {
-                std::string field = Strip(fields[i]);
-                if(columnTypes[i] == TYPE_CONTINUOUS) {
-                    output.AddFeature(new ContinuousFeature(field));
-                } else if(columnTypes[i] == TYPE_TEXT) {
-                    if(ngramType == TEXT_TYPE_NGRAM) output.AddFeature(new NGramFeature(field, ngramLength));
-                    else if(ngramType == TEXT_TYPE_FGRAM) output.AddFeature(new FGramFeature(field, ngramLength));
-                    else if(ngramType == TEXT_TYPE_SGRAM) output.AddFeature(new SGramFeature(field, ngramLength));
-                } else if(columnTypes[i] == TYPE_SET) {
-                    output.AddFeature(new TextFeature(field));
-                } else {
-                    output.AddFeature(NULL);
-                }
-            }
+            for(int i = 0; i < columnTypes.size(); i++) SetFeature(output, i, Strip(fields[i]));
         } else {
             std::cerr << "ERROR: unable to parse example \"" << line << "\" (" << fields.size() << " <> " << columnTypes.size() << "\n";
             return false;
@@ -287,7 +285,50 @@ namespace icsiboost {
         return true;
     }
 
-    std::string Model::Classify(const Example& example, std::vector<double> &scores) const {
+    void Model::SetFeature(Example& example, const std::string& columnName, double value, bool unknown) const {
+        std::tr1::unordered_map<std::string, int>::const_iterator found = mapping.find(columnName);
+        if(found != mapping.end()) SetFeature(example, found->second, value, unknown);
+        else {
+            std::cerr << "ERROR: column not found \"" << columnName << "\"\n";
+        }
+    }
+
+    void Model::SetFeature(Example& example, int column, double value, bool unknown) const {
+        if(columnTypes[column] == TYPE_CONTINUOUS) {
+            example.SetFeature(column, new ContinuousFeature(value, unknown));
+        } else if(columnTypes[column] == TYPE_TEXT || columnTypes[column] == TYPE_SET) {
+            std::stringstream text;
+            if(unknown) text << "?";
+            else text << value;
+            example.SetFeature(column, new TextFeature(text.str()));
+        } else {
+            example.SetFeature(column, NULL);
+        }
+    }
+
+    void Model::SetFeature(Example& example, int column, const std::string& text) const {
+        if(columnTypes[column] == TYPE_CONTINUOUS) {
+            example.SetFeature(column, new ContinuousFeature(text));
+        } else if(columnTypes[column] == TYPE_TEXT) {
+            if(ngramType == TEXT_TYPE_NGRAM) example.SetFeature(column, new NGramFeature(text, ngramLength));
+            else if(ngramType == TEXT_TYPE_FGRAM) example.SetFeature(column, new FGramFeature(text, ngramLength));
+            else if(ngramType == TEXT_TYPE_SGRAM) example.SetFeature(column, new SGramFeature(text, ngramLength));
+        } else if(columnTypes[column] == TYPE_SET) {
+            example.SetFeature(column, new TextFeature(text));
+        } else {
+            example.SetFeature(column, NULL);
+        }
+    }
+
+    void Model::SetFeature(Example& example, const std::string& columnName, const std::string& text) const {
+        std::tr1::unordered_map<std::string, int>::const_iterator found = mapping.find(columnName);
+        if(found != mapping.end()) SetFeature(example, found->second, text);
+        else {
+            std::cerr << "ERROR: column not found \"" << columnName << "\"\n";
+        }
+    }
+
+    int Model::Classify(const Example& example, std::vector<double> &scores) const {
         scores.resize(labels.size());
         for(int i = 0; i < numIterations; i++) {
             const Classifier *classifier = classifiers[i];
@@ -302,6 +343,6 @@ namespace icsiboost {
                 argmax = i;
             }
         }
-        return labels[argmax];
+        return argmax;
     }
 }
