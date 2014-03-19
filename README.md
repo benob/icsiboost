@@ -42,6 +42,8 @@ make
 Program usage (revision r124):
 ------------------------------
 
+Please have a look at the [wiki](https://github.com/benob/icsiboost/wiki) for detailed documentation.
+
 ```
 USAGE: ./icsiboost [options] -S <stem>
   --version               print version info
