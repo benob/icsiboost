@@ -18,7 +18,9 @@
 #MAKEFLAGS=-s
 
 # should move to -Werror (all warnings are errors)
-INCLUDES=-Wall -Werror-implicit-function-declaration -L/opt/local/lib
+#INCLUDES=-Wall -Werror-implicit-function-declaration -L/opt/local/lib
+
+AUTOMAKE_OPTIONS = subdir-objects
 
 utils = utils/vector.c utils/string.c utils/hashtable.c utils/array.c utils/mapped.c utils/threads.c utils/debug.c utils/file.c utils/common.c
 utils += utils/vector.h utils/string.h utils/hashtable.h utils/array.h utils/mapped.h utils/threads.h utils/debug.h utils/file.h utils/common.h
