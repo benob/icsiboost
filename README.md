@@ -6,6 +6,11 @@ Boosting is a meta-learning approach that aims at combining an ensemble of weak 
 
 Here is an excellent tutorial on Boosting: http://nips.cc/Conferences/2007/Program/event.php?ID=575
 
+Status
+------
+
+[![Build Status](https://travis-ci.org/benob/icsiboost.svg?branch=master)](https://travis-ci.org/benob/icsiboost)
+
 News
 ----
 
