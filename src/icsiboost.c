@@ -7,6 +7,10 @@
 # include <config.h>
 #endif
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #define USE_THREADS
 //#define USE_FLOATS
 #define USE_CUTOFF
@@ -376,6 +380,17 @@ weakclassifier_t* train_abstaining_text_stump(double min_objective, template_t* 
 	return classifier;
 }
 
+int local_comparator1(const void* _a, const void* _b, void* values)
+{
+    int32_t aa=*(int32_t*)_a;
+    int32_t bb=*(int32_t*)_b;
+    float aa_value=((float*)values)[aa];
+    float bb_value=((float*)values)[bb];
+    if(isnan(aa_value) || aa_value>bb_value)return 1; // put the NAN (unknown values) at the end of the list
+    if(isnan(bb_value) || aa_value<bb_value)return -1;
+    return 0;
+}
+
 weakclassifier_t* train_known_continuous_stump(double min_objective, template_t* template, vector_t* examples_vector, int num_classes)
 {
 	size_t i,j,l;
@@ -388,17 +403,7 @@ weakclassifier_t* train_known_continuous_stump(double min_objective, template_t*
 		ordered=MALLOC(sizeof(int32_t)*examples_vector->length);
 		int32_t index=0;
 		for(index=0;index<examples_vector->length;index++)ordered[index]=index;
-		int local_comparator(const void* _a, const void* _b)
-		{
-			int32_t aa=*(int32_t*)_a;
-			int32_t bb=*(int32_t*)_b;
-			float aa_value=values[aa];
-			float bb_value=values[bb];
-			if(isnan(aa_value) || aa_value>bb_value)return 1; // put the NAN (unknown values) at the end of the list
-			if(isnan(bb_value) || aa_value<bb_value)return -1;
-			return 0;
-		}
-		qsort(ordered,examples_vector->length,sizeof(int32_t),local_comparator);
+		qsort_r(ordered,examples_vector->length,sizeof(int32_t),local_comparator1, values);
 		template->ordered=ordered;
 	}
 
@@ -491,6 +496,24 @@ weakclassifier_t* train_known_continuous_stump(double min_objective, template_t*
 	return classifier;
 }
 
+int local_comparator2(const void* _a, const void* _b, void* values)
+{
+    int32_t aa=*(int32_t*)_a;
+    int32_t bb=*(int32_t*)_b;
+    float aa_value=((float*)values)[aa];
+    float bb_value=((float*)values)[bb];
+    //float aa_value=vector_get_float(template->values,(size_t)aa);
+    //float bb_value=vector_get_float(template->values,(size_t)bb);
+    //float aa_value=vector_get_float(((example_t*)vector_get(examples,(size_t)aa))->features,column);
+    //float bb_value=vector_get_float(((example_t*)vector_get(examples,(size_t)bb))->features,column);
+    //fprintf(stdout,"%d(%f) <=> %d(%f)\n",aa,aa_value,bb,bb_value);
+    //if(aa_value<bb_value)return -1;
+    //if(aa_value>bb_value)return 1;
+    if(isnan(aa_value) || aa_value>bb_value)return 1; // put the NAN (unknown values) at the end of the list
+    if(isnan(bb_value) || aa_value<bb_value)return -1;
+    return 0;
+}
+
 weakclassifier_t* train_continuous_stump(double min_objective, template_t* template, vector_t* examples_vector, int num_classes)
 {
 	size_t i,j,l;
@@ -504,25 +527,8 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 		int32_t index=0;
 		for(index=0;index<examples_vector->length;index++)ordered[index]=index;
 		//for(i=0;i<examples->length && i<4;i++)fprintf(stdout,"%d %f\n",i,vector_get_float(((example_t*)vector_get(examples,i))->features,column));
-		int local_comparator(const void* _a, const void* _b)
-		{
-			int32_t aa=*(int32_t*)_a;
-			int32_t bb=*(int32_t*)_b;
-			float aa_value=values[aa];
-			float bb_value=values[bb];
-			//float aa_value=vector_get_float(template->values,(size_t)aa);
-			//float bb_value=vector_get_float(template->values,(size_t)bb);
-			//float aa_value=vector_get_float(((example_t*)vector_get(examples,(size_t)aa))->features,column);
-			//float bb_value=vector_get_float(((example_t*)vector_get(examples,(size_t)bb))->features,column);
-			//fprintf(stdout,"%d(%f) <=> %d(%f)\n",aa,aa_value,bb,bb_value);
-			//if(aa_value<bb_value)return -1;
-			//if(aa_value>bb_value)return 1;
-			if(isnan(aa_value) || aa_value>bb_value)return 1; // put the NAN (unknown values) at the end of the list
-			if(isnan(bb_value) || aa_value<bb_value)return -1;
-			return 0;
-		}
-		qsort(ordered,examples_vector->length,sizeof(int32_t),local_comparator);
-		//vector_sort(ordered,local_comparator);
+		qsort_r(ordered,examples_vector->length,sizeof(int32_t),local_comparator2, values);
+		//vector_sort(ordered,local_comparator2);
 		template->ordered=ordered;
 	}
 
