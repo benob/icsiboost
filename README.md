@@ -4,7 +4,7 @@ ICSIBoost
 
 Boosting is a meta-learning approach that aims at combining an ensemble of weak classifiers to form a strong classifier. Adaptive Boosting (Adaboost) is a greedy search for a linear combination of classifiers by overweighting the examples that are misclassified by each classifier. icsiboost implements Adaboost over stumps (one-level decision trees) on discrete and continuous attributes (words and real values). See http://en.wikipedia.org/wiki/AdaBoost and the papers by Y. Freund and R. Schapire for more details. This approach is one of the most efficient and simple to combine continuous and nominal values. Our implementation is aimed at allowing training from millions of examples by hundreds of features (or millions of sparse features) in a reasonable time/memory. It includes classification time code for c, python and java.
 
-Here is an excellent tutorial on Boosting: http://nips.cc/Conferences/2007/Program/event.php?ID=575
+Here is an excellent tutorial on Boosting: http://media.nips.cc/Conferences/2007/Tutorials/Slides/schapire-NIPS-07-tutorial.pdf
 
 Status
 ------
