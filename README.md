@@ -14,6 +14,7 @@ Status
 News
 ----
 
+* 2015-06-23: icsiboost does not compile on OSX Yosemite with the default Xcode gcc (which links to clang). Please use macports to install a proper version of gcc.
 * 2014-03-14: Migrated to github from googlecode (and from svn to git)
 * 2012-05-28: Added C++ API for prediction. See test_api.cc and IcsiBoost.h
 * 2012-05-21: Switched to dual license: GPL and BSD. Choose the license that best fits your project. Old revisions are GPL only.
