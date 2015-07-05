@@ -2390,6 +2390,9 @@ int main(int argc, char** argv)
 		}
 		string_free(only_regex);
 	}
+    if(classes == NULL) {
+        die("classes not defined in names file");
+    }
 	vector_optimize(templates);
 	mapped_free(input);
 	hashtable_free(templates_by_name);
@@ -2781,7 +2784,7 @@ int main(int argc, char** argv)
             for(l=0; l<classes->length; l++)
             {
                 string_t* class = vector_get(classes, l);
-				double precision, recall, f_measure;
+				double precision = 0, recall = 0, f_measure = 0;
 				
 				if (by_class_pred[l]!=0) {
 					precision = ((double)by_class_correct[l])/((double)by_class_pred[l]);
@@ -2808,7 +2811,7 @@ int main(int argc, char** argv)
             for(l=0; l<classes->length; l++)
             {
                 string_t* class = vector_get(classes, l);
-				double precision, recall, f_measure;
+				double precision = 0, recall = 0, f_measure = 0;
 				
 				if (by_class_pred_argmax[l]!=0) {
 					precision = ((double)by_class_correct_argmax[l])/((double)by_class_pred_argmax[l]);
