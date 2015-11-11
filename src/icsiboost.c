@@ -1579,6 +1579,7 @@ vector_t* load_model(vector_t* templates, vector_t* classes, char* filename, int
 	int line_num=0;
 	int num_classifiers=-1;
 	weakclassifier_t* current=NULL;
+    int warned_ngram_tokens = 0;
 	while((line=mapped_readline(input))!=NULL)
 	{
 		line_num++;
@@ -1640,7 +1641,10 @@ vector_t* load_model(vector_t* templates, vector_t* classes, char* filename, int
 						}
 						current->token = tokeninfo->id;
                         if(strchr(word->data, '#') != NULL) {
-                            warn("ngram-like tokens found in model, did you set the correct -W and -N options?");
+                            if(!warned_ngram_tokens) {
+                                warn("ngram-like tokens found in model, did you set the correct -W and -N options?");
+                                warned_ngram_tokens = 1;
+                            }
                         }
 					}
                     if(verbose) fprintf(stderr, "  SGRAM(%s) \"%s\" (id=%d)\n", current->template->name->data, word->data, current->token);
