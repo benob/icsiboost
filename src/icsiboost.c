@@ -23,6 +23,7 @@
 #include "utils/mapped.h"
 #include "utils/array.h"
 #include "utils/file.h"
+#include "utils/sort_r.h"
 
 #ifdef USE_THREADS
 #include "utils/threads.h"
@@ -403,7 +404,7 @@ weakclassifier_t* train_known_continuous_stump(double min_objective, template_t*
 		ordered=MALLOC(sizeof(int32_t)*examples_vector->length);
 		int32_t index=0;
 		for(index=0;index<examples_vector->length;index++)ordered[index]=index;
-		qsort_r(ordered,examples_vector->length,sizeof(int32_t),local_comparator1, values);
+		sort_r(ordered,examples_vector->length,sizeof(int32_t),local_comparator1, values);
 		template->ordered=ordered;
 	}
 
@@ -527,7 +528,7 @@ weakclassifier_t* train_continuous_stump(double min_objective, template_t* templ
 		int32_t index=0;
 		for(index=0;index<examples_vector->length;index++)ordered[index]=index;
 		//for(i=0;i<examples->length && i<4;i++)fprintf(stdout,"%d %f\n",i,vector_get_float(((example_t*)vector_get(examples,i))->features,column));
-		qsort_r(ordered,examples_vector->length,sizeof(int32_t),local_comparator2, values);
+		sort_r(ordered,examples_vector->length,sizeof(int32_t),local_comparator2, values);
 		//vector_sort(ordered,local_comparator2);
 		template->ordered=ordered;
 	}

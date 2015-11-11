@@ -4,14 +4,17 @@
  */
 
 #define _GNU_SOURCE
+
+#include "utils/common.h"
+#include "utils/debug.h"
+
+#ifndef __MINGW32__
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
 #include <unistd.h>
 #include <sys/wait.h>
-
-#include "utils/common.h"
-#include "utils/debug.h"
 
 unsigned int _debug_delay=1;
 int _debug_interactive=0;
@@ -57,3 +60,11 @@ void init_debugging(const char* program_name, int interactive)
 	signal(SIGSEGV,_sigsegv_handler);
 	signal(SIGBUS,_sigsegv_handler);
 }
+
+#else
+
+void init_debugging(const char* program_name, int interactive) {
+    fprintf(stderr, "WARNING: debugging handle not available on this operating system\n");
+}
+
+#endif
