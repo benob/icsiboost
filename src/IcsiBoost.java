@@ -19,6 +19,7 @@ import java.util.regex.*;
 import java.util.*;
 import java.io.*;
 
+
 class IcsiBoost {
     public class Feature {
     }
@@ -31,41 +32,50 @@ class IcsiBoost {
         public double getValue() {
             return value;
         }
+	public String toString() {
+	    return String.format("%f", value);
+	}
+
     }
 
     public class TextFeature extends Feature {
-        protected Vector<String> values;
+        protected List<String> values;
         public TextFeature() { 
-            values = new Vector<String>();
+            values = new ArrayList<>();
         }
         public TextFeature(String content) {
-            values = new Vector<String>(1);
+            values = new ArrayList<>(1);
             values.add(content);
         }
-        public Vector<String> getValues() {
+        public List<String> getValues() {
             return values;
         }
     }
 
     public class NGramFeature extends TextFeature {
         public NGramFeature(String content, int length) {
-            values = new Vector<String>();
+            values = new ArrayList<>();
             String[] tokens = content.split(" ");
             for(int i = 0; i < tokens.length; i++) {
-                StringBuilder ngram = new StringBuilder(tokens[i]);
-                System.out.println(tokens[i] +" " + i + " " + length);
+                StringBuilder ngram = new StringBuilder();
+		// JHE
+                //System.out.println("zzzz"+ tokens[i] +" " + i + " " + length);
                 for(int j = 0; j < length && i + j < tokens.length; j++) {
-                    ngram.append("_");
+                    if (ngram.length() != 0) ngram.append("#");
                     ngram.append(tokens[i + j]);
-                    values.add(ngram.toString());
+		values.add(ngram.toString());
                 }
             }
         }
+	public String toString() {
+	    String r = "<" + values + ">";
+            return r;
+	}
     }
 
     public class FGramFeature extends TextFeature {
         public FGramFeature(String content, int length) {
-            values = new Vector<String>();
+            values = new ArrayList<>();
             String[] tokens = content.split(" ");
             for(int i = 0; i < tokens.length - length; i++) {
                 StringBuilder ngram = new StringBuilder(tokens[i]);
@@ -76,16 +86,26 @@ class IcsiBoost {
                 values.add(ngram.toString());
             }
         }
+	public String toString() {
+	    String r = "<" + values + ">";
+            return r;
+	}
+
     }
 
     public class SGramFeature extends TextFeature {
         public SGramFeature(String content, int length) {
-            values = new Vector<String>();
+            values = new ArrayList<>();
             String[] tokens = content.split(" ");
             for(int i = 0; i < tokens.length - length; i++) {
                 values.add(tokens[i] + "_" + tokens[i + length]);
             }
         }
+	public String toString() {
+	    String r = "<" + values + ">";
+            return r;
+	}
+
     }
 
     public class UndefinedFeature extends Feature {
@@ -104,21 +124,21 @@ class IcsiBoost {
             if(c0 != null) {
                 builder.append("  c0 ");
                 for(int i = 0; i < c0.length; i++) {
-                    builder.append(c0[i] + " ");
+                    builder.append(c0[i]).append(" ");
                 }
                 builder.append("\n");
             }
             if(c1 != null) {
                 builder.append("  c1 ");
                 for(int i = 0; i < c1.length; i++) {
-                    builder.append(c1[i] + " ");
+                    builder.append(c1[i]).append(" ");
                 }
                 builder.append("\n");
             }
             if(c2 != null) {
                 builder.append("  c2 ");
                 for(int i = 0; i < c2.length; i++) {
-                    builder.append(c2[i] + " ");
+                    builder.append(c2[i]).append(" ");
                 }
                 builder.append("\n");
             }
@@ -185,7 +205,7 @@ class IcsiBoost {
                     result[i] += c0[i];
                 }
             } else {
-                Vector<String> values = ((TextFeature)feature).getValues();
+                List<String> values = ((TextFeature)feature).getValues();
                 if(values.contains(token)) {
                     for(int i = 0; i < result.length; i++) {
                         result[i] += c1[i];
@@ -199,10 +219,10 @@ class IcsiBoost {
         }
     }
     public class Model {
-        public Vector<Classifier> classifiers;
+        public List<Classifier> classifiers;
         public String[] labels;
-        public Vector<String> types;
-        public Hashtable<String, Integer> mapping;
+        public List<String> types;
+        public Map<String, Integer> mapping;
         static final int TYPE_CONTINUOUS = 0;
         static final int TYPE_TEXT = 1;
         static final int TYPE_IGNORE = 1;
@@ -220,8 +240,8 @@ class IcsiBoost {
             loadShyp(stem + ".shyp");
         }
         public void loadNames(String filename) throws IOException {
-            mapping = new Hashtable<String, Integer>();
-            types = new Vector<String>();
+            mapping = new HashMap<>();
+            types = new ArrayList<>();
             boolean firstLine = true;
             BufferedReader input = new BufferedReader(new FileReader(filename));
             String line;
@@ -233,8 +253,10 @@ class IcsiBoost {
                     firstLine = false;
                 } else {
                     String result[] = line.split("(^\\s+|\\s*:\\s*|\\s*\\.?$)");
-                    if(result.length == 2) {
-                        mapping.put(result[0], new Integer(types.size()));
+                    //System.err.println("QQQQ " + line + " " + result[1] + " " + result.length);
+                    if(result.length >= 2) { // etait == 2
+                        mapping.put(result[0], types.size());
+			//System.err.println("QQQQ " + line + " " + result[0] + " " + types.size());
                         types.add(result[1]);
                     }
                 }
@@ -252,7 +274,7 @@ class IcsiBoost {
         }
 
         public void loadShyp(String filename) throws IOException {
-            classifiers = new Vector<Classifier>();
+            classifiers = new ArrayList<>();
             boolean seenIterations = false;
             BufferedReader input = new BufferedReader(new FileReader(filename));
             String line;
@@ -281,7 +303,7 @@ class IcsiBoost {
                         token = textMatcher.group(3);
                         Integer columnInteger = mapping.get(name);
                         if(columnInteger != null) {
-                            column = columnInteger.intValue();
+                            column = columnInteger;
                             String type = types.get(column);
                             if(type.contains(",")) {
                                 String values[] = type.split("\\s*,\\s*");
@@ -304,7 +326,7 @@ class IcsiBoost {
                         name = thresholdMatcher.group(2);
                         Integer columnInteger = mapping.get(name);
                         if(columnInteger != null) {
-                            column = columnInteger.intValue();
+                            column = columnInteger;
                             String type = types.get(column);
                             if(!"continuous".equals(type)) {
                                 System.err.println("ERROR: unsupported type \"" + type + "\" for threshold");
@@ -364,27 +386,64 @@ class IcsiBoost {
                         example.features.add(new UndefinedFeature());
                     } else {
                         if(typesAsInt[i] == TYPE_TEXT) {
-                            if(ngramType == TYPE_NGRAM) example.features.add(new NGramFeature(fields[i], ngramLength));
-                            else if(ngramType == TYPE_FGRAM) example.features.add(new FGramFeature(fields[i], ngramLength));
-                            else if(ngramType == TYPE_SGRAM) example.features.add(new SGramFeature(fields[i], ngramLength));
+                            switch (ngramType) {
+                                case TYPE_NGRAM:
+                                    example.features.add(new NGramFeature(fields[i], ngramLength));
+                                    break;
+                                case TYPE_FGRAM:
+                                    example.features.add(new FGramFeature(fields[i], ngramLength));
+                                    break;
+                                case TYPE_SGRAM:
+                                    example.features.add(new SGramFeature(fields[i], ngramLength));
+                                    break;
+                                default:
+                                    break;
+                            }
                         } else if(typesAsInt[i] == TYPE_CONTINUOUS) {
                             example.features.add(new ContinuousFeature(fields[i]));
                         }
                     }
                 }
                 if(fields.length == typesAsInt.length + 1) {
-                    String labels[] = fields[fields.length - 1].split("(\\s+|\\s*\\.$)");
-                    for(int i = 0; i < labels.length; i++) {
-                        example.labels.add(labels[i]);
+                    String llabels[] = fields[fields.length - 1].split("(\\s+|\\s*\\.$)");
+                    for(int i = 0; i < llabels.length; i++) {
+                        example.labels.add(llabels[i]);
                     }
                 }
             }
+	    //System.err.println("Ex.: " + example);
             return example;
         }
     }
     public class Example {
-        public Vector<Feature> features = new Vector<Feature>();
-        public Vector<String> labels = new Vector<String>();
+        public List<Feature> features = new ArrayList<>();
+        public List<String> labels = new ArrayList<>();
+
+	// put the results of the evaluation
+        public List<Integer> haslabels = new ArrayList<>();
+        public List<Double> values = new ArrayList<>();
+	
+	public String toString() {
+	    String r = features + ":" + labels + " " + haslabels + " " + values;
+	    return r;
+	}
+	
+	public String results() {
+	    StringBuilder sb = new StringBuilder();
+	    boolean first = true;
+	    for (Integer i : haslabels) {
+		if (!first) sb.append(' ');
+		else first = false;
+		sb.append(i);
+	    }
+	    for (Double d : values) {
+		sb.append(' ');
+		sb.append(d);
+	    }
+
+	    return sb.toString();
+	}
+	
     }
 
     Model model;
@@ -396,19 +455,29 @@ class IcsiBoost {
             Classifier classifier = model.classifiers.get(i);
             classifier.classify(example.features.get(classifier.column), result);
         }
-        for(int i = 0; i < model.labels.length; i++) {
-            if(example.labels.contains(model.labels[i])) System.out.print("1 ");
-            else System.out.print("0 ");
+        for (int i = 0; i < model.labels.length; i++) {
+	    //if (i != 0) System.out.print(" ");
+            //if (example.labels.contains(model.labels[i])) System.out.print("1");
+            //else System.out.print("0");
+
+            if (example.labels.contains(model.labels[i])) example.haslabels.add(1);
+            else example.haslabels.add(1);
+	    
         }
+
         for(int i = 0; i < result.length; i++) {
-            result[i] /= model.numIterations;
-            System.out.print(result[i] + " ");
+	    //System.out.println("eeeeee " + model.numIterations + " " + result[i]);
+	    double x = result[i];
+	    double res = 1.0 / (1.0 + Math.exp(-2.0 * x));
+	    //System.out.print(" " + res);
+	    example.values.add(res);
         }
-        System.out.println();
+        //System.out.println();
+        //System.out.println("EEE: " + example);
         return example;
     }
     public IcsiBoost(String stem) throws IOException {
-        model = new Model(stem, Model.TYPE_NGRAM, 1);
+        model = new Model(stem, 1, Model.TYPE_NGRAM);
     }
     public static void main(String args[]) {
         try {
@@ -417,6 +486,7 @@ class IcsiBoost {
             String line;
             while(null != (line = reader.readLine())) {
                 Example example = decoder.decode(line);
+		System.out.println(example.results());
             }
         } catch (IOException e) {
             e.printStackTrace();
