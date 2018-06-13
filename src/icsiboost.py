@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 # Copyright (C) (2009) (Benoit Favre) <favre@icsi.berkeley.edu>
 #
 # This program is free software; you can redistribute it and/or 
@@ -54,7 +57,7 @@ class Classifier:
             else:
                 name = re.split(r':', line)[0]
                 self.names[name] = len(self.names)
-    
+        #print "NAMES", self.names
     def read_shyp(self, shyp_file):
         num_classifiers = None
         feature = None
@@ -95,6 +98,7 @@ class Classifier:
 
     # example should be [set(), set(), ...] with a set for each column (or anything which has the "in" operator)
     def compute_scores(self, example):
+        #print "rrrr", example
         scores = [0.0 for x in self.classes]
         for feature in self.features:
             if feature.value != None:
@@ -123,6 +127,7 @@ class Classifier:
 
     def compute_posteriors(self, example):
         scores = self.compute_scores(example)
+        #print "eeeee", len(self.features), scores
         return [1.0 / (1.0 + math.exp(-2.0 * x * len(self.features))) for x in scores]
 
     def classify(self, example):
@@ -151,13 +156,19 @@ if __name__ == '__main__':
         sys.exit(1)
     classifier = Classifier(sys.argv[1])
     for line in sys.stdin.xreadlines():
+        #print "zzz", line
         columns = line.strip().split(",")
         columns[-1] = re.sub(r'\.$', '', columns[-1].strip())
         scores = classifier.compute_posteriors([set(generate_ngram(x.split(), 3)) for x in columns])
         for i in range(len(classifier.classes)):
+            if i != 0:  sys.stdout.write(' ')
             if columns[-1] == classifier.classes[i]:
-                sys.stdout.write('1 ')
+                sys.stdout.write('1')
             else:
-                sys.stdout.write('0 ')
-        print " ".join([str(x) for x in scores])
+                sys.stdout.write('0')
+
+        #print " ".join([str(x) for x in scores])
+        for x in scores:
+            sys.stdout.write(" %.12f" % x)
+        print ""
 
