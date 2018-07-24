@@ -2638,7 +2638,7 @@ int main(int argc, char** argv)
                         if(l<classes->length-1)fprintf(stdout," ");
                         if((score[l]<=0 && example_classes[l]!=0))erroneous_example = 1;
                         if((score[l]>0 && example_classes[l]==0))erroneous_example = 1;
-						if (score[l]>max) {
+						if (max_class == -10000 || score[l]>max) {
 							max = score[l];
 							max_class = l;
 						}
