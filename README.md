@@ -111,7 +111,7 @@ To cite icsiboost, please use:
 @misc{icsiboost,
     title={{Icsiboost}},
     author={Benoit Favre and Dilek Hakkani-T{\"u}r and Sebastien Cuendet},
-    howpublished={\url{http://code.google.come/p/icsiboost}},
+    howpublished={\url{https://github.com/benob/icsiboost}},
     year={2007}
 }
 ```
