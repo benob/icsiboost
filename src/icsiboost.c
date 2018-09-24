@@ -1111,9 +1111,9 @@ vector_t* load_examples_multilabel(const char* filename, vector_t* templates, ve
 	int i,j;
 	while((line=string_readline(fp))!=NULL)
 	{
+		string_chomp(line);
 		if(line_num % 1000 == 0)fprintf(stderr, "\r%s: %d", filename, line_num);
 		line_num++;
-		string_chomp(line);
 		if(string_match(line,"^(\\|| *$)","n")) // skip comments and blank lines
 		{
 			string_free(line);
@@ -1582,6 +1582,7 @@ vector_t* load_model(vector_t* templates, vector_t* classes, char* filename, int
     int warned_ngram_tokens = 0;
 	while((line=mapped_readline(input))!=NULL)
 	{
+        string_chomp(line);
 		line_num++;
 		if(string_match(line,"^ *$","n")) // skip blank lines
 		{
@@ -2187,6 +2188,7 @@ int main(int argc, char** argv)
 	int line_num = 0;
 	while((line = mapped_readline(input)) != NULL) // should add some validity checking !!!
 	{
+        string_chomp(line);
 		if(string_match(line,"^(\\|| *$)","n")) // skip comments and blank lines
 		{
 			string_free(line);
@@ -2452,8 +2454,8 @@ int main(int argc, char** argv)
 		}
 		while((line=string_readline(stdin))!=NULL)
 		{
-			line_num++;
 			string_chomp(line);
+			line_num++;
 			if(string_match(line,"^(\\|| *$)","n")) // skip comments and blank lines
 			{
 				string_free(line);
